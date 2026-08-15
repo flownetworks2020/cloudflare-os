@@ -2,6 +2,21 @@ import { formatAttachmentSize } from "../../attachmentFormatting";
 
 export const MAX_CHAT_ATTACHMENT_BYTES = 1024 * 1024;
 export const MAX_CHAT_ATTACHMENT_TOTAL_BYTES = 5 * 1024 * 1024;
+// Must match MAX_CONVERTIBLE_DOCUMENT_BYTES in the backend's chat-attachment-validation.ts.
+export const MAX_CONVERTIBLE_DOCUMENT_BYTES = 10 * 1024 * 1024;
+
+// Documents the server may convert to Markdown instead of storing as-is. They are allowed to be
+// far larger than a stored attachment because only the extracted text is kept. Whether a PDF
+// actually converts depends on the selected model's provider, which the server decides -- a large
+// PDF sent to a provider that reads PDFs natively is rejected there, by the stored-as-is cap.
+const CONVERTIBLE_DOCUMENT_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",       // .xlsx
+]);
+
+export const isConvertibleDocumentMimeType = (mimeType: string): boolean =>
+  CONVERTIBLE_DOCUMENT_MIME_TYPES.has(mimeType);
 const MAX_CHAT_ATTACHMENT_SOURCE_IMAGE_BYTES = 25 * 1024 * 1024;
 const CHAT_ATTACHMENT_IMAGE_MAX_EDGE = 1568;
 
@@ -18,10 +33,11 @@ export const prepareChatAttachment = async (
   file: File,
 ): Promise<{ blob: Blob; mimeType: string }> => {
   if (!file.type.startsWith("image/")) {
-    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
-      throw new Error(
-        `Attachments must be ${formatAttachmentSize(MAX_CHAT_ATTACHMENT_BYTES)} or smaller.`,
-      );
+    const limit = isConvertibleDocumentMimeType(file.type)
+      ? MAX_CONVERTIBLE_DOCUMENT_BYTES
+      : MAX_CHAT_ATTACHMENT_BYTES;
+    if (file.size > limit) {
+      throw new Error(`Attachments must be ${formatAttachmentSize(limit)} or smaller.`);
     }
     return { blob: file, mimeType: file.type || "application/octet-stream" };
   }

@@ -5,6 +5,7 @@ import { reportIssue } from "../../../../errorReporting";
 import { formatAttachmentSize } from "../../attachmentFormatting";
 import {
   MAX_CHAT_ATTACHMENT_TOTAL_BYTES,
+  isConvertibleDocumentMimeType,
   prepareChatAttachment,
 } from "./prepareChatAttachment";
 
@@ -39,6 +40,10 @@ export const useComposerAttachments = ({
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const stagedCleanupRef = useRef(new Map<string, () => void>());
   const mountedRef = useRef(true);
+  // Convertible documents upload one at a time. Each one buffers up to 10 MiB and waits on a
+  // Workers AI conversion inside a single Durable Object isolate; firing several of those at once
+  // is not a profile the server is sized for.
+  const documentUploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const getOverseerRef = useRef(getOverseer);
   const onErrorRef = useRef(onError);
   getOverseerRef.current = getOverseer;
@@ -134,11 +139,17 @@ export const useComposerAttachments = ({
         onErrorRef.current(`You can attach up to ${MAX_COMPOSER_ATTACHMENTS} attachments`);
         continue;
       }
+      // The total budget is on stored bytes. A convertible document is stored as the text
+      // extracted from it -- a fraction of what was uploaded -- so charging its raw size here
+      // would reject documents well inside the limit the server actually enforces.
+      const isConvertibleDocument = isConvertibleDocumentMimeType(mimeType);
       const totalBytes = attachmentsRef.current.reduce(
-        (sum, attachment) => sum + attachment.blob.size,
+        (sum, attachment) => isConvertibleDocumentMimeType(attachment.mimeType)
+          ? sum
+          : sum + attachment.blob.size,
         0,
       );
-      if (totalBytes + blob.size > MAX_CHAT_ATTACHMENT_TOTAL_BYTES) {
+      if (!isConvertibleDocument && totalBytes + blob.size > MAX_CHAT_ATTACHMENT_TOTAL_BYTES) {
         onErrorRef.current(
           `Attached files must total ${formatAttachmentSize(MAX_CHAT_ATTACHMENT_TOTAL_BYTES)} or less`,
         );
@@ -156,7 +167,14 @@ export const useComposerAttachments = ({
         uploadState: "uploading",
       };
       updateAttachments((current) => [...current, attachment]);
-      void uploadAttachment(id, blob, mimeType, file.name || undefined, modelId);
+      if (isConvertibleDocument) {
+        const upload = documentUploadQueueRef.current.then(() =>
+          uploadAttachment(id, blob, mimeType, file.name || undefined, modelId));
+        documentUploadQueueRef.current = upload;
+        void upload;
+      } else {
+        void uploadAttachment(id, blob, mimeType, file.name || undefined, modelId);
+      }
     }
   };
 
