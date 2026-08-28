@@ -7861,14 +7861,31 @@ class OverseerImpl implements AgentHooks {
       clientUser: DurableObjectStub<UserDurableObject>,
       role: CollaboratorRole,
       configureCb?: RpcStub<ObserverConfigCallback>): Promise<void> {
-    // 1. Select in-scope gatekeepers. If none require an account, there is nothing to verify and
-    //    no observer record is needed (built-in gatekeepers never name observers in
-    //    excludeObservers).
+    // 1. Select in-scope gatekeepers. If none require an account, there is nothing to verify
+    //    (built-in gatekeepers never name observers in excludeObservers).
     let inScope = this.#inScopeGatekeepers(role);
+
+    // 2. Load any existing observer record, and prune every account choice for a gatekeeper now
+    //    outside this collaborator's verification scope, keeping the record an accurate statement
+    //    of what their most recent open verified: entry present => verified at that open.
+    //    Rebinding a connection keeps its gatekeeper id, so a stale entry from before an unbind
+    //    would otherwise re-register them off a choice made for a scope the workspace no longer
+    //    has, instead of asking them again.
+    let record = this.storage.observers.get(profileId);
+    if (record) {
+      let inScopeIds = new Set(inScope.map(gk => gk.id));
+      let pruned = false;
+      for (let key of Object.keys(record.accountChoices)) {
+        if (!inScopeIds.has(Number(key))) {
+          delete record.accountChoices[Number(key)];
+          pruned = true;
+        }
+      }
+      if (pruned) this.storage.observers.put(record);
+    }
     if (inScope.length === 0) return;
 
-    // 2. Load any existing observer record, and build a working copy of its account choices.
-    let record = this.storage.observers.get(profileId);
+    // Build a working copy of the (pruned) account choices.
     let accountChoices: {[gatekeeperId: number]: number} = {...record?.accountChoices};
 
     // Gatekeeper ids registered before this call (their account choice came from the persisted
