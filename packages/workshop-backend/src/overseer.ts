@@ -2210,7 +2210,8 @@ class OverseerImpl implements AgentHooks {
       }
       throw new Error(`There is already a binding named "${name}".`);
     }
-    if (!this.storage.gatekeepers.get(target)) {
+    let targetRecord = this.storage.gatekeepers.get(target);
+    if (!targetRecord) {
       if (this.storage.gadgets.get(target)) {
         throw new Error(`Gadget-to-gadget bindings are not supported yet.`);
       }
@@ -2221,6 +2222,14 @@ class OverseerImpl implements AgentHooks {
 
     // The gadget's env changed, so its code must reload.
     this.bumpVersion([gadgetId]);
+
+    // A permanent edge puts an account-requiring connection into every "use" collaborator's
+    // verification scope (#gadgetBoundGatekeeperIds), since the gadget UI they drive can now
+    // invoke it. A pending edge is invisible to them until it's promoted, which restarts then.
+    if (chatId === undefined && targetRecord.creationSpec &&
+        "vendorId" in targetRecord.creationSpec) {
+      this.#restartIfShared("Gadget restarted because a connection was bound to a gadget.");
+    }
   }
 
   // Remove the named binding edge from the gadget. The target gatekeeper itself survives,
@@ -3644,6 +3653,12 @@ class OverseerImpl implements AgentHooks {
       throw new Error("The chat's code is being actively edited; please retry.");
     }
 
+    // Promotion below can widen every "use" collaborator's verification scope, so snapshot the
+    // scope first and compare after. Comparing the effective scope rather than restarting on any
+    // promotion matters because most merges promote neither: a gadget with no bindings, or an edge
+    // to a vendorless connection, is in nobody's verification scope.
+    let useScopeBefore = this.#accountRequiringUseScope();
+
     // Promote provisional gadgets whose creation is covered by this merge: accepting the chat's
     // changes through `mergeThrough` makes them permanent workspace members. Each covered
     // creation sits on an unmerged, unreverted "changes" message at `pending.sequence` (a
@@ -3675,6 +3690,10 @@ class OverseerImpl implements AgentHooks {
         this.storage.gadgets.put(gadget);
       }
     }
+
+    // Did the promotions above actually bring an account-requiring connection into "use" scope?
+    let widenedUseScope =
+        [...this.#accountRequiringUseScope()].some(id => !useScopeBefore.has(id));
 
     // Fast-forward each committed gadget's head.
     for (let {gadgetId, commitId} of commits) {
@@ -3763,6 +3782,13 @@ class OverseerImpl implements AgentHooks {
       chat_id: chatId,
       interaction_type: "code_merged",
     });
+
+    // Sever live sessions whose verification scope the promotions widened, now that the writes
+    // above have landed: a "use" collaborator's session was admitted against the narrower scope,
+    // and the gadget UI they drive can now invoke a connection nobody verified them against.
+    if (widenedUseScope) {
+      this.#restartIfShared("Gadget restarted because accepted changes added gadget bindings.");
+    }
 
     return {outcome: "merged"};
   }
@@ -4353,6 +4379,14 @@ class OverseerImpl implements AgentHooks {
       throw error;
     }
 
+    // A new account-requiring connection is in every "build" collaborator's verification scope
+    // immediately -- a live build session can getGatekeeperById() and openSession() on it with no
+    // observer check -- so sever those sessions. A vendorless spec (aiModel/agentSpawner) is in
+    // nobody's scope (#inScopeGatekeepers skips it), so it widens nothing.
+    if (creationSpec && "vendorId" in creationSpec) {
+      this.#restartIfShared("Gadget restarted because a new connection was added.");
+    }
+
     return new GatekeeperClientImpl<any>(this, id, facet);
   }
 
@@ -4848,7 +4882,7 @@ class OverseerImpl implements AgentHooks {
   // User DO ids whose outputs index this workspace is keeping live, one token per open session.
   //
   // In memory, not persisted, which is what makes fanning out to collaborators safe: revoking
-  // access aborts the DO (see scheduleRevocationRestart()), so this is destroyed with the sessions
+  // access aborts the DO (see scheduleAccessRestart()), so this is destroyed with the sessions
   // it describes and can only be rebuilt by an open() that re-checks the permission graph.
   #connectedIndexes = new Map<string, Set<object>>();
 
@@ -4975,30 +5009,61 @@ class OverseerImpl implements AgentHooks {
     return codeVersion;
   }
 
-  // Force every client to disconnect and re-authenticate after a collaborator has been removed or
-  // downgraded, so that someone who just lost access can't keep using a session that's already
-  // open. Authorization is only checked at open() (see the sharing docs), so without this a stale
-  // session would survive until something else happened to disconnect it.
+  // Force every client to disconnect and re-authenticate, so that no session outlives a change to
+  // what its holder is entitled to. Both checks that gate a session run only at open() (see the
+  // sharing docs), so without this a stale session would survive until something else happened to
+  // disconnect it. Two kinds of change need it:
+  // - Access removed or downgraded (removeCollaborator, revokeShareLink, workspace deletion):
+  //   someone who just lost access could keep using the session they already have.
+  // - Verification scope widened (see #restartIfShared): a collaborator's live session was
+  //   verified against a smaller set of gatekeepers than the workspace now holds.
   //
   // We restart by aborting the whole DO. Aborting propagates to clients: the `notifyClosed` stub
   // handed to each session is disposed without being called, which AuthenticatedApiImpl detects
   // and reacts to by killing the browser WebSocket, forcing a reconnect that re-runs open() and
-  // re-checks the (now-changed) permission graph. Removing/downgrading collaborators is rare, so
-  // the disruption is acceptable -- and DOs restart unpredictably anyway, so reconnects need to
-  // be made as painless as possible regardless.
+  // re-checks the (now-changed) permission graph. These events are rare, so the disruption is
+  // acceptable -- and DOs restart unpredictably anyway, so reconnects need to be made as painless
+  // as possible regardless.
   //
   // Two precautions before the abort:
-  // - `ctx.abort()` does not respect the output gate, so we explicitly flush the severed edge to
-  //   disk with `ctx.storage.sync()`. Otherwise a restart could come back with the change lost,
-  //   leaving the removed user still authorized.
+  // - `ctx.abort()` does not respect the output gate, so we explicitly flush the triggering change
+  //   to disk with `ctx.storage.sync()`. Otherwise a restart could come back with the change lost,
+  //   leaving the removed user still authorized (or the widened scope unrecorded). By the same
+  //   token, callers must schedule the restart *after* the write that triggered it, never before
+  //   further writes in the same turn -- those would be racing the abort.
   // - We delay the abort briefly so the triggering RPC's response can reach the caller (typically
   //   the owner, who is also connected and will be disconnected) before their connection drops.
   //   Without the delay their own removeCollaborator()/revokeShareLink() call might reject with a
   //   connection error even though it succeeded.
-  async scheduleRevocationRestart(): Promise<void> {
+  async scheduleAccessRestart(reason: string): Promise<void> {
     await this.ctx.storage.sync();
     await scheduler.wait(100);
-    this.ctx.abort("Gadget restarted to revoke access for a removed collaborator.");
+    this.ctx.abort(reason);
+  }
+
+  // Sessions are authorized and verified only at open(), so widening what a live session's holder
+  // must be verified against leaves that session holding unverified access. Restart everyone --
+  // the same mechanism used when access is revoked -- so each client's next open() re-runs
+  // authorizeCollaborator/ensureObserver against the new scope. No-op when the workspace has no
+  // collaborators: the owner is never an observer, so there is nobody to re-verify and no reason
+  // to disturb the one session that exists.
+  //
+  // Fire-and-forget: the callers are synchronous (bindWorkpiece) or already past their last write,
+  // and getSharingManager() is async, so failures are logged rather than left as an unhandled
+  // rejection. Failing to restart is fail-open for the widened scope, hence the `error` level.
+  //
+  // Note that ensureAmbientCapsules() calls addGatekeeper() from inside open(), so on a shared
+  // workspace the first open after an ambient capsule appears bounces itself once; the capsule
+  // exists by then, so the client's retry is clean.
+  #restartIfShared(reason: string): void {
+    this.getSharingManager().then(sharing => {
+      if (sharing.listCollaborators().length === 0) return;
+      return this.scheduleAccessRestart(reason);
+    }).catch(error => {
+      this.logger.error("failed to restart sessions after verification scope widened", {
+        event: "workspace.scope.restart.failed", error,
+      });
+    });
   }
 
   // Last timestamp generated by getChatTimestamp(), if it has been called during this session.
@@ -7757,23 +7822,41 @@ class OverseerImpl implements AgentHooks {
     }
   }
 
+  // Gatekeeper ids bound by some non-provisional gadget -- everything the gadget UI can invoke,
+  // and therefore all of a "use" collaborator's verification scope.
+  #gadgetBoundGatekeeperIds(): Set<WorkpieceId> {
+    let boundIds = new Set<WorkpieceId>();
+    for (let gadget of this.storage.gadgets.list()) {
+      // Provisional gadgets and binding edges aren't visible to "use" collaborators, so they
+      // don't bring gatekeepers into scope.
+      if (gadget.pending) continue;
+      for (let [, edge] of this.visibleBindings(gadget)) {
+        boundIds.add(edge.target);
+      }
+    }
+    return boundIds;
+  }
+
+  // The account-requiring subset of #gadgetBoundGatekeeperIds(): exactly what a "use" collaborator
+  // is verified against, as an id set two states can be compared by (see mergeChatChanges).
+  //
+  // Uses the non-throwing gatekeeperVendorId() rather than #inScopeGatekeepers("use"), whose
+  // observerVendorId() throws on a legacy record with no creationSpec: an unrelated legacy
+  // connection must not turn a caller's ordinary bookkeeping into an error.
+  #accountRequiringUseScope(): Set<WorkpieceId> {
+    let ids = new Set<WorkpieceId>();
+    for (let id of this.#gadgetBoundGatekeeperIds()) {
+      if (gatekeeperVendorId(this.storage.gatekeepers.get(id))) ids.add(id);
+    }
+    return ids;
+  }
+
   // Selects the gatekeepers a non-owner observer with the given `role` must be verified against:
   //   - "build" collaborators (full access): every account-requiring gatekeeper.
   //   - "use" collaborators (UI only): only account-requiring gatekeepers bound by some gadget,
   //     since that is all the UI can invoke.
   #inScopeGatekeepers(role: CollaboratorRole): GatekeeperRecord[] {
-    let boundIds: Set<WorkpieceId> | undefined;
-    if (role === "use") {
-      boundIds = new Set();
-      for (let gadget of this.storage.gadgets.list()) {
-        // Provisional gadgets and binding edges aren't visible to "use" collaborators, so they
-        // don't bring gatekeepers into scope.
-        if (gadget.pending) continue;
-        for (let [, edge] of this.visibleBindings(gadget)) {
-          boundIds.add(edge.target);
-        }
-      }
-    }
+    let boundIds = role === "use" ? this.#gadgetBoundGatekeeperIds() : undefined;
 
     let result: GatekeeperRecord[] = [];
     for (let gk of this.storage.gatekeepers.list()) {
@@ -7790,8 +7873,8 @@ class OverseerImpl implements AgentHooks {
 
   // Best-effort `removeObserver(observerId)` across the given gatekeeper ids. Never throws; logs
   // and continues on error. An orphaned observer entry only ever causes superfluous future checks,
-  // never a data leak (the leak-relevant gate is authorizeObservation, which keys off the live
-  // sharing graph).
+  // never a data leak: a registration is what admits an open, and every open re-runs addObserver,
+  // so a stale one grants nothing on its own.
   async #removeObserverFromGatekeepers(observerId: string, gatekeeperIds: number[]): Promise<void> {
     await Promise.all(gatekeeperIds.map(async id => {
       try {
@@ -7808,8 +7891,8 @@ class OverseerImpl implements AgentHooks {
   // For each affected collaborator who is now fully unauthorized (newRole === null) and has an
   // observer record: best-effort removeObserver on all gatekeeper facets, then delete the record.
   // All calls are best-effort -- an orphaned observer entry only causes superfluous future checks,
-  // never a data leak (the leak-relevant gate is authorizeObservation, keyed off the live sharing
-  // graph). See observers-implementation-plan.md §5 Step 6.
+  // never a data leak: a registration is what admits an open, and every open re-runs addObserver,
+  // so a stale one grants nothing on its own. See observers-implementation-plan.md §5 Step 6.
   async tearDownLostObservers(affected: AffectedCollaborator[]): Promise<void> {
     let gatekeeperIds = [...this.storage.gatekeepers.list()].map(gk => gk.id);
     for (let entry of affected) {
@@ -7904,6 +7987,9 @@ class OverseerImpl implements AgentHooks {
     // Gatekeepers that refused (or whose account was gone) during this call and have not verified
     // since
     let invalidated = new Set<number>();
+    // Whether a failure scrubbed a previously-persisted account choice, i.e. this collaborator's
+    // verified coverage shrank. See the catch below.
+    let scrubbedCoverage = false;
 
     // Failures from the previous pass, keyed by gatekeeper id: an already-configured binding whose
     // chosen account was disconnected, or which the gatekeeper refused.
@@ -8005,6 +8091,10 @@ class OverseerImpl implements AgentHooks {
             if (persisted && gk.id in persisted.accountChoices) {
               delete persisted.accountChoices[gk.id];
               this.storage.observers.put(persisted);
+              // The scrub only rewrites what the record claims; the collaborator's other
+              // sessions are still open and still hold the access it used to justify. Note the
+              // shrink so the catch below can sever them.
+              scrubbedCoverage = true;
             }
             this.logger.warn("observer verification failed", {
               event: "gatekeeper.observer.verify.failed",
@@ -8075,6 +8165,17 @@ class OverseerImpl implements AgentHooks {
       // would have excluded them from is admitted with nothing left to block it.
       let rollback = returningObserver ? newlyAdded : new Set([...newlyAdded, ...invalidated]);
       await this.#removeObserverFromGatekeepers(observerId, [...rollback]);
+
+      // This open is being denied, but the collaborator may hold other sessions that opened while
+      // the scrubbed choice still verified them. Sever every session so they must re-verify --
+      // whoever can't will simply be denied their next open. This cannot loop: a second identical
+      // failure finds the entry already scrubbed, so no flag and no restart. A re-prompt that
+      // repairs the failure never reaches here, and step 6 re-persists full coverage.
+      if (scrubbedCoverage) {
+        this.#restartIfShared(
+            "Gadget restarted because a collaborator failed to re-verify their access.");
+      }
+
       throw err;
     }
 
@@ -9356,7 +9457,7 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     await this.impl.ctx.blockConcurrencyWhile(async () => {
       await this.#owner.deleteGadget(this.impl.ctx.id.toString());
       await this.impl.ctx.storage.deleteAll();
-      this.impl.scheduleRevocationRestart();
+      this.impl.scheduleAccessRestart("Gadget restarted because the workspace was deleted.");
       this.impl.ownerId = undefined;
     });
 
@@ -10485,7 +10586,8 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     // excluded). A no-op removal -- e.g. severing a share-link edge nobody relied on -- shouldn't
     // disconnect everyone.
     if (affected.length > 0) {
-      this.impl.scheduleRevocationRestart();
+      this.impl.scheduleAccessRestart(
+          "Gadget restarted to revoke access for a removed collaborator.");
     }
     return affected;
   }
@@ -10504,7 +10606,8 @@ class OverseerClientInterface extends RpcTarget implements Overseer {
     await this.impl.refreshAffectedCollaboratorListings(affected);
     // Only restart if someone actually lost access or was downgraded (see removeCollaborator).
     if (affected.length > 0) {
-      this.impl.scheduleRevocationRestart();
+      this.impl.scheduleAccessRestart(
+          "Gadget restarted to revoke access for a revoked share link.");
     }
     return affected;
   }

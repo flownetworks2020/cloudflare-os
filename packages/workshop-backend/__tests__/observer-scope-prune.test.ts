@@ -5,7 +5,8 @@
 // no longer has, instead of asking them again.
 //
 // Runs against a real OverseerDurableObject (the TEST_OVERSEER binding, like
-// git-migration-do.test.ts); the gatekeeper facet and the client's User DO are the only fakes.
+// git-migration-do.test.ts); the gatekeeper facet, the client's User DO, and the restart are the
+// only fakes -- a real ctx.abort() would kill the test DO.
 
 import { describe, expect, it } from "vitest";
 import { env } from "cloudflare:workers";
@@ -118,13 +119,15 @@ describe("ensureObserver out-of-scope coverage pruning", () => {
     });
   });
 
-  it("makes the re-open after a rebind re-verify the pruned producer", async () => {
+  it("restarts on a rebind, and the re-open re-verifies the pruned producer", async () => {
     let stub = env.TEST_OVERSEER.getByName("observer-scope-prune-rebind");
     await runInDurableObject(stub, async (instance: OverseerDurableObject) => {
       let impl = (instance as unknown as { impl: any }).impl;
       seedGatekeepers(impl);
       seedGadgetBindingGk1(impl);
       impl.ownerProfileId = "owner";
+      let restarts: string[] = [];
+      impl.scheduleAccessRestart = async (reason: string) => { restarts.push(reason); };
       // Alice is a "use" collaborator with stale coverage for gatekeeper 2, left over from before
       // it was unbound from every gadget.
       impl.storage.collaborators.put({
@@ -146,13 +149,14 @@ describe("ensureObserver out-of-scope coverage pruning", () => {
       expect(verified).toEqual([1]);
       expect(impl.storage.observers.get("alice").accountChoices).toEqual({ 1: 10 });
 
-      // Rebind gatekeeper 2 (same gatekeeper id -- only the gadget's binding edges change).
-      let gadget = impl.storage.gadgets.get(100);
-      gadget.bindings.DB2 = { target: 2 };
-      impl.storage.gadgets.put(gadget);
+      // Rebind gatekeeper 2 (same gatekeeper id -- only the gadget's binding edges change). That
+      // widens every "use" collaborator's scope, so it severs Alice's live session.
+      impl.bindWorkpiece(100, "DB2", 2);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(restarts).toHaveLength(1);
 
-      // Her next open is where gatekeeper 2 gets verified again -- and since the prune left no
-      // entry to reuse, she is asked to choose an account for it rather than being re-registered
+      // Her forced re-open is where gatekeeper 2 gets verified again -- and since the prune left
+      // no entry to reuse, she is asked to choose an account for it rather than being re-registered
       // off the choice she made before it was unbound.
       let asked: number[] = [];
       let configureCb = { configure: async (needs: { gatekeeperId: number }[]) => {
