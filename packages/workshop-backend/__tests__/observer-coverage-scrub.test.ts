@@ -105,12 +105,78 @@ describe("observer coverage scrub on a failed live check", () => {
 
       // The rejection went through fail(): gatekeeper 1's persisted coverage is scrubbed -- so
       // the record no longer claims this collaborator was verified for it -- while gatekeeper 2's
-      // survives. The invalidated registration is also rolled back (see the TODO in
-      // ensureObserver's catch about keeping re-asserted registrations for admitted observers).
+      // survives.
       let record = impl.storage.observers.get("alice");
       expect(1 in record.accountChoices).toBe(false);
       expect(record.accountChoices[2]).toBe(20);
-      expect(removed).toEqual([1]);
+
+      // Alice was already an admitted observer, so the failure de-registers her from nothing: the
+      // registrations are what make gatekeepers name her in `excludeObservers`, and the scrub does
+      // not cover the same observations (it gates `prohibitAllSharing` only).
+      expect(removed).toEqual([]);
+    });
+  });
+
+  it("keeps a returning observer's registration so forward exclusion survives the failure",
+      async () => {
+    let stub = env.TEST_OVERSEER.getByName("observer-coverage-scrub-keeps-registration");
+    await runInDurableObject(stub, async (instance: OverseerDurableObject) => {
+      let impl = (instance as unknown as { impl: any }).impl;
+      seedGatekeepers(impl);
+      // Alice's previous open covered gatekeeper 1 only; gatekeeper 2 is a binding added since,
+      // which she has never been verified against.
+      impl.storage.observers.put(
+          { profileId: "alice", observerId: "obs-1", accountChoices: { 1: 10 } });
+
+      let removed: number[] = [];
+      impl.getGatekeeperFacet = (id: number) => ({
+        // Gatekeeper 1 has revoked her access upstream: the binding she *was* admitted for is the
+        // one that now refuses, which is exactly the case that used to drop her registration.
+        addObserver: async () => { if (id === 1) throw new Error("access revoked upstream"); },
+        removeObserver: async () => { removed.push(id); },
+      });
+
+      let configureCb = { configure: async (needs: {gatekeeperId: number}[]) =>
+          needs.map(need => ({ gatekeeperId: need.gatekeeperId, accountId: 20 })) } as any;
+
+      await expect(impl.ensureObserver("alice", fakeClientUser, "build", configureCb))
+          .rejects.toThrow(/could not confirm/);
+
+      // The two registrations are treated differently, which is the whole point. Gatekeeper 1's
+      // predates this call, so it survives and keeps naming her in `excludeObservers`. Gatekeeper
+      // 2's was created by this call, so rolling it back merely restores the pre-call state --
+      // there was no prior registration whose exclusions could be lost.
+      expect(removed).toEqual([2]);
+      // Coverage is still scrubbed regardless, so her next open must re-verify gatekeeper 1.
+      expect(1 in impl.storage.observers.get("alice").accountChoices).toBe(false);
+    });
+  });
+
+  it("a first-ever verification failure still rolls its registrations back", async () => {
+    let stub = env.TEST_OVERSEER.getByName("observer-coverage-scrub-first-ever");
+    await runInDurableObject(stub, async (instance: OverseerDurableObject) => {
+      let impl = (instance as unknown as { impl: any }).impl;
+      seedGatekeepers(impl);
+      // No observer record: Alice has never been admitted, so the observerId minted for this call
+      // is discarded with the unpersisted record and anything registered under it would linger
+      // unresolvable.
+      let removed: number[] = [];
+      impl.getGatekeeperFacet = (id: number) => ({
+        addObserver: async () => { if (id === 2) throw new Error("no access"); },
+        removeObserver: async () => { removed.push(id); },
+      });
+
+      let configureCb = { configure: async (needs: {gatekeeperId: number}[]) =>
+          needs.map(need => ({ gatekeeperId: need.gatekeeperId, accountId: need.gatekeeperId * 10 }))
+      } as any;
+
+      await expect(impl.ensureObserver("alice", fakeClientUser, "build", configureCb))
+          .rejects.toThrow(/could not confirm/);
+
+      // Both the one that verified and the one that refused are rolled back, and no record is
+      // persisted.
+      expect(removed.toSorted()).toEqual([1, 2]);
+      expect(impl.storage.observers.get("alice")).toBeUndefined();
     });
   });
 });
