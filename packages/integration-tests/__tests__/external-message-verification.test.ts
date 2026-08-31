@@ -13,7 +13,8 @@ import type {
   SubmitExternalMessageResult,
 } from "@gadgets/workshop-shared/external-message-gateway";
 import {
-  startTestGatekeeperHarness, TEST_GATEKEEPER_WORKER, TEST_VENDOR_ID, type Harness,
+  settleRestart, startTestGatekeeperHarness, TEST_GATEKEEPER_WORKER, TEST_VENDOR_ID,
+  type Harness,
 } from "../src/harness.js";
 import {
   accountLabel, connect, listConnectedAccounts, MAX_OBSERVER_PROMPTS, nextUsernames,
@@ -166,6 +167,11 @@ describe("external-message verification", () => {
       if (revoked.accepted) throw new Error("The revoked submission was accepted");
       expect(revoked.message).toMatch(/could not be verified/i);
       expect(revoked.message).toContain(DENIED_REASON);
+
+      // That denial scrubbed Bob's persisted choice, so the workspace restarts shortly. Bob is a
+      // collaborator, so the restart is real -- wait it out rather than leaving it to land on a
+      // sibling test.
+      await settleRestart();
     });
   });
 

@@ -16,7 +16,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { RpcStub } from "capnweb";
 import type { AuthenticatedApi, Overseer, PublicApi } from "@gadgets/workshop-shared/api";
 import {
-  startTestGatekeeperHarness, TEST_GATEKEEPER_WORKER, TEST_VENDOR_ID, type Harness,
+  settleRestart, startTestGatekeeperHarness, TEST_GATEKEEPER_WORKER, TEST_VENDOR_ID,
+  type Harness,
 } from "../src/harness.js";
 import {
   accountLabel, connect, listConnectedAccounts, MAX_OBSERVER_PROMPTS, nextUsernames,
@@ -171,15 +172,6 @@ async function bobOpens(
     callback[Symbol.dispose]();
   }
 }
-
-// A denied re-verification scrubs the account choice it just failed against, so the overseer
-// severs every session on the workspace -- Bob may hold others that opened while that choice still
-// verified him. The sever is a ctx.abort() ~100ms after the open rejects, i.e. after the test body
-// has returned. Wait it out before withSession() drops the connection: an abort that lands with no
-// client left on the workspace crashes the local workerd, and these tests share one harness, so the
-// crash fails whichever siblings are mid-flight rather than this test.
-const RESTART_SETTLE_MS = 400;
-const settleRestart = () => new Promise(resolve => setTimeout(resolve, RESTART_SETTLE_MS));
 
 /** Open once and answer the prompt, which is what persists Bob's account choice. */
 async function bobOpensAndCloses(shared: SharedGadget): Promise<ObserverConfigRecorder> {
