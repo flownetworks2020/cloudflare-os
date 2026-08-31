@@ -1,6 +1,6 @@
 import { RpcStub } from "capnweb";
 import { GadgetMetadataWithTimestamps, AiChatAuthorInfo, AiModelConfig, SUGGESTED_MODELS, CollaboratorRole, ConnectedAccountsSubscriber, ConnectedAccountsFilter, GatekeeperVendorFilter, GadgetMetadata, BlueprintMetadata, BlueprintLibrarySummary, BlueprintSource, BlueprintUserSummary, BLUEPRINT_SCREENSHOT_R2_PREFIX, GatekeeperVendorInfo, BlueprintOutput, OutputSummary, WorkpieceId, ListOutputsResult, AUTH_ERROR_CODES, createAuthError } from '@gadgets/workshop-shared/api';
-import { Gatekeeper, GatekeeperUser, GatekeeperUserVerifier, GatekeeperVendor, AccountDescription, VendorDescription, GatekeeperConnectCallback, SupportedResource, ResourceConfiguratorFrame, AppUiContext, GatekeeperUiFrame } from "@gadgets/workshop-shared/gatekeeper";
+import { Gatekeeper, GatekeeperUser, GatekeeperUserVerifier, GatekeeperVendor, AccountDescription, VendorDescription, GatekeeperConnectCallback, SupportedResource, ResourceConfiguratorFrame, AppUiContext, GatekeeperUiFrame, managedAiModelId } from "@gadgets/workshop-shared/gatekeeper";
 import { shouldAutoProvisionAccount, ambientGatekeeperMode } from "./provisioning-policy.js";
 import { CloudflareGatekeeperUser } from "@gadgets/workshop-shared/cloudflare-gatekeeper";
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
@@ -544,10 +544,49 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
         result.push(model.profile);
       }
     }
+    for (let model of await this.#managedAiModels()) result.push(model.profile);
     return result;
   }
 
+  async #managedAiModels(): Promise<UserAiModelRecord[]> {
+    const config = await readAdminConfig(this.env);
+    const disabled = new Set(config.disabledGatekeepers);
+    const connectedVendors = new Set(
+      [...this.#connectedAccountRecords()]
+        .filter(areCredentialsValid)
+        .map((account) => account.vendorId),
+    );
+    const records: UserAiModelRecord[] = [];
+    for (const vendorId of connectedVendors) {
+      if (disabled.has(vendorId)) continue;
+      const vendor = this.vendors.get(vendorId);
+      if (!vendor) continue;
+      try {
+        const description = await vendor.describe();
+        for (const model of description.managedAiModels ?? []) {
+          if (model.mode !== "workspace-agent") continue;
+          records.push({
+            profile: {
+              id: managedAiModelId(vendorId, model.id),
+              name: model.displayName,
+              type: "agent",
+            },
+            config: { provider: "managed", model: model.id, vendorId },
+          });
+        }
+      } catch (err) {
+        logger.warn("failed to load managed AI workspace agents", {
+          event: "managed.ai.models.load.failed", vendorId, error: err,
+        });
+      }
+    }
+    return records;
+  }
+
   async addModel(profile: AiChatAuthorInfo, config: AiModelConfig): Promise<void> {
+    if (config.provider === "managed") {
+      throw new Error("Managed workspace agents are supplied by connected services.");
+    }
     let gwConfig = getAiGatewayConfig(this.env);
     if (gwConfig && !gwConfig.providers.has(config.provider)) {
       throw new Error(`Provider "${config.provider}" is not available in AI Gateway mode.`);
@@ -592,7 +631,8 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
     if (id !== null) {
       // Validate that the model exists in the user's configured models or as a gateway model.
       let gwConfig = getAiGatewayConfig(this.env);
-      let exists = !!this.storage.aiModels.get(id) || !!gwConfig?.resolveModel(id);
+      let exists = !!this.storage.aiModels.get(id) || !!gwConfig?.resolveModel(id) ||
+          (await this.#managedAiModels()).some((model) => model.profile.id === id);
       if (!exists) {
         throw new Error(`No such model: ${id}`);
       }
@@ -706,6 +746,9 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       }
       if (!result.aiModel) {
         result.aiModel = this.storage.aiModels.get(modelId);
+      }
+      if (!result.aiModel) {
+        result.aiModel = (await this.#managedAiModels()).find((model) => model.profile.id === modelId);
       }
       if (!result.aiModel) throw new Error(`No such model: ${modelId}`);
     }

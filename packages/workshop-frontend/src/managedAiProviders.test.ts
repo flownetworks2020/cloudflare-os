@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GatekeeperVendorInfo } from '@gadgets/workshop-shared/api'
+import { managedAiModelId } from '@gadgets/workshop-shared/gatekeeper'
 import { collectManagedModels, managedModelMatches } from './managedAiProviders'
 
 const vendor: GatekeeperVendorInfo = {
@@ -12,6 +13,7 @@ const vendor: GatekeeperVendorInfo = {
       displayName: 'Codex Balanced',
       command: 'codex-balanced',
       description: 'Run one balanced task.',
+      mode: 'workspace-agent',
     }],
   },
   supportedResources: [],
@@ -50,5 +52,9 @@ describe('managed AI provider discovery', () => {
     expect(managedModelMatches(entry, 'balanced')).toBe(true)
     expect(managedModelMatches(entry, 'managed codex')).toBe(true)
     expect(managedModelMatches(entry, 'unrelated')).toBe(false)
+  })
+
+  it('builds a stable selectable model id from the vendor and model ids', () => {
+    expect(managedAiModelId('codex', 'gpt-5.6-terra')).toBe('managed:codex:gpt-5.6-terra')
   })
 })

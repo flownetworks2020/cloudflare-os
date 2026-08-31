@@ -1147,8 +1147,8 @@ export type AiGatewayInfo = {
   enabled: false;
 };
 
-/** Configuration specifying how to connect to an AI model provider. */
-export type AiModelConfig = {
+/** Configuration for a model reached through a provider API. */
+export type ApiAiModelConfig = {
   /** Which AI provider hosts the model? */
   provider: AiModelProvider;
 
@@ -1171,6 +1171,16 @@ export type AiModelConfig = {
    */
   apiUrl?: string;
 };
+
+/** Configuration for a selectable workspace agent supplied by a connected Gatekeeper. */
+export type ManagedAiModelConfig = {
+  provider: "managed";
+  model: string;
+  vendorId: string;
+};
+
+/** Configuration specifying how the Workshop reaches a selectable agent. */
+export type AiModelConfig = ApiAiModelConfig | ManagedAiModelConfig;
 
 /**
  * Workers AI adds the response cap to the prompt and rejects a request whose total exceeds the

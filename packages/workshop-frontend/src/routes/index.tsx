@@ -23,12 +23,19 @@ import { useDocumentTitle } from "../useDocumentTitle";
 import { homePromptFromSearch } from "../homePrompt";
 import { composerDraftStorageKey } from "../composerDraft";
 
-type HomeSearch = { prompt?: string };
+type HomeSearch = { prompt?: string; model?: string };
+
+function homeModelFromSearch(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 512 ? trimmed : undefined;
+}
 
 export const Route = createFileRoute("/")({
   component: HomePage,
   validateSearch: (search: Record<string, unknown>): HomeSearch => ({
     prompt: homePromptFromSearch(search.prompt),
+    model: homeModelFromSearch(search.model),
   }),
 });
 
@@ -36,10 +43,10 @@ export const Route = createFileRoute("/")({
 // in the AppShell rail, so this page focuses on a single thing: composing the first message of a
 // new gadget — a centered column with a hero, the prompt composer, and a few task suggestions.
 function HomePage() {
-  return <HomePageContent prompt={Route.useSearch().prompt} />;
+  return <HomePageContent {...Route.useSearch()} />;
 }
 
-export function HomePageContent({ prompt }: HomeSearch) {
+export function HomePageContent({ prompt, model }: HomeSearch) {
   useDocumentTitle("Home");
 
   const { authenticatedApi, currentUser } = useAuthenticatedApi();
@@ -63,7 +70,15 @@ export function HomePageContent({ prompt }: HomeSearch) {
       .then((list) => {
         if (cancelled) return;
         setModels(list);
-        setSelectedModel(getStoredSelectedModel(list));
+        const routedModel = model && list.some((candidate) => candidate.id === model)
+          ? model
+          : undefined;
+        const nextModel = routedModel ?? getStoredSelectedModel(list);
+        setSelectedModel(nextModel);
+        if (routedModel) {
+          persistSelectedModel(routedModel);
+          navigate({ to: "/", search: {}, replace: true });
+        }
       })
       .catch((err) => {
         logRpcFailure("Failed to fetch models:", err);
@@ -76,7 +91,7 @@ export function HomePageContent({ prompt }: HomeSearch) {
     return () => {
       cancelled = true;
     };
-  }, [authenticatedApi]);
+  }, [authenticatedApi, model, navigate]);
 
   const handleModelChange = useCallback((value: string | null) => {
     setSelectedModel(value);

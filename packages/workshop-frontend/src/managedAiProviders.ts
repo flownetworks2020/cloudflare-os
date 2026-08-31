@@ -26,7 +26,8 @@ function isManagedModel(value: unknown): value is ManagedAiModelDescription {
   return typeof model.id === 'string' && model.id.trim().length > 0 &&
     typeof model.displayName === 'string' && model.displayName.trim().length > 0 &&
     typeof model.command === 'string' && COMMAND_PATTERN.test(model.command) &&
-    typeof model.description === 'string' && model.description.trim().length > 0
+    typeof model.description === 'string' && model.description.trim().length > 0 &&
+    (model.mode === 'tool' || model.mode === 'workspace-agent')
 }
 
 /**

@@ -53,7 +53,7 @@ function sanitizeChatAttachmentName(name: string | undefined): string | undefine
 
 /** Reject an attachment type that the selected provider cannot accept. */
 export function assertChatAttachmentSupportedByProvider(
-  provider: AiModelProvider | undefined,
+  provider: AiModelConfig["provider"] | undefined,
   mimeType: string,
   byteLength: number,
 ): void {
@@ -64,6 +64,10 @@ export function assertChatAttachmentSupportedByProvider(
   if (!provider) {
     if (isTextOrImageMime(mimeType)) return;
     throw new Error("Unsupported file type");
+  }
+
+  if (provider === "managed") {
+    throw new Error("Managed workspace agents do not support attachments yet.");
   }
 
   if (ATTACHMENT_SUPPORT_BY_PROVIDER[provider](mimeType)) return;

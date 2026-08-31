@@ -27,6 +27,7 @@ import {
   managedModelMatches,
   type ManagedModelEntry,
 } from '../managedAiProviders'
+import { managedAiModelId } from '@gadgets/workshop-shared/gatekeeper'
 
 export const Route = createFileRoute('/providers')({ component: ProvidersPage })
 
@@ -135,11 +136,16 @@ function ManagedModelRow({
   onActivate: () => void
 }) {
   const ready = entry.connected && entry.credentialsValid
+  const selectable = entry.model.mode === 'workspace-agent'
   return (
     <button
       type="button"
       onClick={onActivate}
-      title={ready ? `Start a workspace with /${entry.model.command}` : `Connect ${entry.vendor.displayName}`}
+      title={ready
+        ? selectable
+          ? `Use ${entry.model.displayName} as the workspace agent`
+          : `Start a workspace with /${entry.model.command}`
+        : `Connect ${entry.vendor.displayName}`}
       className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ease-out hover:bg-kumo-tint"
     >
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-kumo-fill text-[12px] font-medium text-kumo-subtle">
@@ -151,7 +157,7 @@ function ManagedModelRow({
             {entry.model.displayName}
           </span>
           <span className="shrink-0 rounded-full bg-kumo-tint px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.4px] text-kumo-subtle">
-            managed tool
+            {selectable ? 'workspace agent' : 'managed tool'}
           </span>
           <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${ready ? 'text-kumo-success' : 'text-kumo-subtle'}`}>
             {ready && <CheckCircle size={12} weight="fill" />}
@@ -296,14 +302,20 @@ function ProvidersPage() {
     }
   }
 
-  const filtered = models.filter((m) => {
+  const managedModels = collectManagedModels(managedVendors, connectedAccounts.values())
+  const managedProfileIds = new Set(
+    managedModels
+      .filter((entry) => entry.model.mode === 'workspace-agent')
+      .map((entry) => managedAiModelId(entry.vendorId, entry.model.id)),
+  )
+  const apiModels = models.filter((model) => !managedProfileIds.has(model.id))
+  const filtered = apiModels.filter((m) => {
     if (!search) return true
     const q = search.toLowerCase()
     return m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)
   })
-  const managedModels = collectManagedModels(managedVendors, connectedAccounts.values())
   const filteredManaged = managedModels.filter((entry) => managedModelMatches(entry, search))
-  const hasProviders = models.length > 0 || managedModels.length > 0
+  const hasProviders = apiModels.length > 0 || managedModels.length > 0
 
   return (
     <div className="mx-auto flex h-full w-full max-w-4xl flex-col px-3 sm:px-10">
@@ -351,13 +363,13 @@ function ProvidersPage() {
               </Notice>
             )}
 
-            {!gatewayMode && models.length > 0 && (
+            {!gatewayMode && apiModels.length > 0 && (
               <Notice>
                 <Lightning size={15} className="mt-px shrink-0 text-kumo-brand" />
                 <span>
                   <strong className="font-medium text-kumo-default">Quick model:</strong>{' '}
                   {quickModel
-                    ? `${models.find((m) => m.id === quickModel)?.name ?? quickModel}.`
+                    ? `${apiModels.find((m) => m.id === quickModel)?.name ?? quickModel}.`
                     : 'none set.'}{' '}
                   Used for fast tasks like generating chat titles. Click a model to set it.
                 </span>
@@ -368,9 +380,10 @@ function ProvidersPage() {
               <Notice>
                 <Lightning size={15} className="mt-px shrink-0 text-kumo-brand" />
                 <span>
-                  <strong className="font-medium text-kumo-default">Managed AI tools:</strong>{' '}
-                  run explicitly from a workspace using the command shown on each row. They do not
-                  replace your chat or quick model and do not use AI Gateway billing.
+                  <strong className="font-medium text-kumo-default">Managed AI agents:</strong>{' '}
+                  workspace-agent entries can be selected in the model picker and edit the current
+                  gadget through the connected service. Command-only entries run explicitly. Neither
+                  uses AI Gateway billing.
                 </span>
               </Notice>
             )}
@@ -428,7 +441,7 @@ function ProvidersPage() {
             {filteredManaged.length > 0 && (
               <div className="mt-3 border-t border-kumo-line pt-3">
                 <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.4px] text-kumo-inactive">
-                  Managed AI tools
+                  Managed AI agents and tools
                 </p>
                 {filteredManaged.map((entry) => (
                   <ManagedModelRow
@@ -437,6 +450,13 @@ function ProvidersPage() {
                     onActivate={() => {
                       if (!entry.connected || !entry.credentialsValid) {
                         navigate({ to: '/gatekeepers' })
+                        return
+                      }
+                      if (entry.model.mode === 'workspace-agent') {
+                        navigate({
+                          to: '/',
+                          search: { model: managedAiModelId(entry.vendorId, entry.model.id) },
+                        })
                         return
                       }
                       navigate({ to: '/', search: { prompt: `/${entry.model.command} ` } })

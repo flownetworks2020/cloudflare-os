@@ -143,6 +143,9 @@ function catalogModel(provider: AiModelConfig["provider"], modelId: string): Mod
 // gaps for models we don't list, and unknown models get conservative defaults.
 function modelTokenWindow(config: AiModelConfig, catalog: Model<Api> | undefined)
     : { contextWindow: number, maxTokens: number } {
+  if (config.provider === "managed") {
+    return {contextWindow: 128_000, maxTokens: 4096};
+  }
   const suggested = SUGGESTED_MODELS[config.provider]?.[config.model];
   return {
     contextWindow: suggested?.contextWindow ?? catalog?.contextWindow ?? 128_000,
@@ -639,9 +642,8 @@ function getModelDirect(config: AiModelConfig, sessionAffinity?: string): ModelH
         apiKey: config.apiToken,
         sessionAffinity,
       });
-    default:
-      config.provider satisfies never;
-      throw new Error(`Unknown provider "${config.provider}".`);
+    case "managed":
+      throw new Error("Managed workspace agents do not use the provider inference path.");
   }
 }
 

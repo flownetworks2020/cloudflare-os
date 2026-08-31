@@ -34,10 +34,37 @@ export type AvatarImage = {
   url: string;
 }
 
+/** One text file supplied to a managed workspace agent. */
+export type ManagedAiWorkspaceFile = { path: string; content: string };
+
+/** One bounded file mutation returned by a managed workspace agent. */
+export type ManagedAiWorkspaceChange =
+  | { path: string; kind: "created" | "modified"; content: string }
+  | { path: string; kind: "deleted" };
+
+/** Request from the Workshop kernel to a connected managed workspace agent. */
+export type ManagedAiWorkspaceRequest = {
+  model: string;
+  prompt: string;
+  files: ManagedAiWorkspaceFile[];
+};
+
+/** Verified result returned by a connected managed workspace agent. */
+export type ManagedAiWorkspaceResult = {
+  runId: string;
+  model: string;
+  output: string;
+  changes: ManagedAiWorkspaceChange[];
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  workspace: "ephemeral";
+  sandbox: "workspace-write";
+};
+
 /**
- * One model-like tool a Gatekeeper makes available through an explicit slash
- * command. These entries are discovery metadata, not Workshop chat models:
- * they cannot become the quick/default model and do not enter AI Gateway.
+ * One model a Gatekeeper makes available as either an explicit slash-command tool or a selectable
+ * workspace agent. Workspace agents run outside AI Gateway and cannot become the quick model.
  */
 export type ManagedAiModelDescription = {
   /** Provider-native model identifier shown to users. */
@@ -51,6 +78,14 @@ export type ManagedAiModelDescription = {
 
   /** Short explanation of the model's intended use. */
   description: string;
+
+  /** Whether this entry is only a command or can own the Workshop's workspace-agent turn. */
+  mode: "tool" | "workspace-agent";
+}
+
+/** Stable Workshop model id for one Gatekeeper-supplied workspace agent. */
+export function managedAiModelId(vendorId: string, modelId: string): string {
+  return `managed:${vendorId}:${modelId}`;
 }
 
 /** Describes a connected GatekeeperVendor, for display purposes. */
@@ -82,9 +117,8 @@ export type VendorDescription = {
   description?: string;
 
   /**
-   * Model-like tools this Gatekeeper exposes through slash commands. The
-   * Providers page renders them as managed tools and directs users through the
-   * Gatekeeper connection; it never treats them as selectable chat models.
+   * Managed AI capabilities this Gatekeeper exposes. Tool entries remain slash-command-only;
+   * workspace-agent entries become selectable only while a valid connected account exists.
    */
   managedAiModels?: ManagedAiModelDescription[];
 
@@ -762,6 +796,17 @@ export interface Gatekeeper<Session> extends DurableObject {
    * particular API.
    */
   startSession(approvalQueue: RpcStub<ApprovalQueue>): Promise<Session>;
+
+  /**
+   * Run a selectable managed workspace-agent turn. Implemented only by gatekeepers that advertise
+   * a matching `managedAiModels` entry with `mode: "workspace-agent"`. The gatekeeper must
+   * authorize any returned observation through the supplied queue and return only bounded text
+   * files and metadata; the Workshop kernel owns applying the changes to its review stream.
+   */
+  runManagedAiWorkspace?(
+    request: ManagedAiWorkspaceRequest,
+    approvalQueue: RpcStub<ApprovalQueue>,
+  ): Promise<ManagedAiWorkspaceResult>;
 
   /**
    * Bounded, user-specific metadata the agent uses to discover entries reachable through this

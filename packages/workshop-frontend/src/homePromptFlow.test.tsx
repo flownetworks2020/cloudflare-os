@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const testState = vi.hoisted(() => {
-  const listModels = vi.fn<() => Promise<never[]>>(async () => []);
+  const listModels = vi.fn(async () => [] as Array<{ id: string; name: string; type: "agent" }>);
   const newGadget = vi.fn<() => never>();
   return {
     addToast: vi.fn<(toast: unknown) => void>(),
@@ -16,6 +16,7 @@ const testState = vi.hoisted(() => {
     navigate: vi.fn<(options: unknown) => void>(),
     newGadget,
     seeds: [] as Array<{ text?: string; nonce?: number }>,
+    selectedModels: [] as Array<string | null>,
     draftStorageKeys: [] as Array<string | undefined>,
   };
 });
@@ -37,13 +38,15 @@ vi.mock("./AuthContext", () => ({
 }));
 
 vi.mock("./ChatInterface", () => ({
-  ChatInput: ({ seedText, seedNonce, draftStorageKey }: {
+  ChatInput: ({ seedText, seedNonce, draftStorageKey, selectedModel }: {
     seedText?: string;
     seedNonce?: number;
     draftStorageKey?: string;
+    selectedModel: string | null;
   }) => {
     testState.seeds.push({ text: seedText, nonce: seedNonce });
     testState.draftStorageKeys.push(draftStorageKey);
+    testState.selectedModels.push(selectedModel);
     return <textarea aria-label="Prompt" readOnly value={seedText ?? ""} />;
   },
 }));
@@ -66,6 +69,7 @@ describe("Home prompt route flow", () => {
     localStorage.clear();
     testState.seeds.length = 0;
     testState.draftStorageKeys.length = 0;
+    testState.selectedModels.length = 0;
     vi.clearAllMocks();
   });
 
@@ -82,5 +86,23 @@ describe("Home prompt route flow", () => {
     expect(testState.navigate).toHaveBeenCalledWith({ to: "/", search: {}, replace: true });
     expect(testState.newGadget).not.toHaveBeenCalled();
     expect(testState.draftStorageKeys).toContain("gadgets:composer-draft:v1:user-a:home");
+  });
+
+  it("selects a managed workspace agent from provider-page route state", async () => {
+    testState.listModels.mockResolvedValueOnce([
+      { id: "native", name: "Native", type: "agent" },
+      { id: "managed:codex:gpt-5.6-sol", name: "Codex Sol", type: "agent" },
+    ]);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+
+    await act(async () => root!.render(
+      <HomePageContent model="managed:codex:gpt-5.6-sol" />,
+    ));
+
+    expect(testState.selectedModels).toContain("managed:codex:gpt-5.6-sol");
+    expect(localStorage.getItem("lastSelectedModel")).toBe("managed:codex:gpt-5.6-sol");
+    expect(testState.navigate).toHaveBeenCalledWith({ to: "/", search: {}, replace: true });
   });
 });

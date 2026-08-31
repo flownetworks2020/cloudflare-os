@@ -4,7 +4,7 @@ import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, Work
 import { applyCodeChange, changedGadgets, composeCodeChange, diffFiles, transformCodeChange,
   validateCodeChangeContent, validateCodeChangeSchema,
   type CodeContent, type CodeChange } from "@gadgets/workshop-shared/code-change";
-import { Gatekeeper, HookInitiator, ResourceDescription, ApprovalQueue, ActionDescription, ObservationAuthorizer, ObservationDescription, VendorDescription, SupportedResource, resolveRequestedResource, HookController, HookDescription, ActionKind } from "@gadgets/workshop-shared/gatekeeper";
+import { Gatekeeper, HookInitiator, ResourceDescription, ApprovalQueue, ActionDescription, ObservationAuthorizer, ObservationDescription, VendorDescription, SupportedResource, resolveRequestedResource, HookController, HookDescription, ActionKind, type ManagedAiWorkspaceRequest } from "@gadgets/workshop-shared/gatekeeper";
 import {
   DurableObject, WorkerEntrypoint, RpcStub as NativeRpcStub,
   RpcTarget as NativeRpcTarget, restore,
@@ -254,6 +254,8 @@ type GatekeeperClass = DurableObjectClass<Gatekeeper<any>>;
 // shape to call it — same optional-method-on-a-stub pattern as user.ts's SingletonAccountStub.
 type CatalogGatekeeperFacet =
     Fetcher<Gatekeeper<any> & Required<Pick<Gatekeeper<any>, "getAgentCatalog">>>;
+type ManagedAiGatekeeperFacet =
+    Fetcher<Gatekeeper<any> & Required<Pick<Gatekeeper<any>, "runManagedAiWorkspace">>>;
 
 type LegacyBlueprintBindingAnnotation = BlueprintBindingAnnotation & {
   included?: boolean;
@@ -5662,6 +5664,17 @@ class OverseerImpl implements AgentHooks {
       // When the Cloudflare limits flow is disabled, checkUsageAndBalance() always allows.
       // (This runs inside the try so the `finally` below still clears the active-agent state and
       // emits a stream "clear" — otherwise the UI would spin forever on a block.)
+      if (aiModel.config.provider === "managed") {
+        if (callbackInitiated) {
+          throw new Error("Managed workspace agents cannot resume gadget callbacks.");
+        }
+        await this.#runManagedAiWorkspaceTurn(chatId, aiModel);
+        turnLogger.debug("agent run finished", {
+          event: "agent.run.finished", outcome: "ok", durationMs: Date.now() - startedAt,
+        });
+        return;
+      }
+
       let byokRouting: UserGatewayRouting | undefined;
       if (!callbackInitiated && this.ownerId) {
         let ownerStub = this.users.get(this.users.idFromString(this.ownerId));
@@ -5858,6 +5871,77 @@ class OverseerImpl implements AgentHooks {
         this.#liveChats.delete(chatId);
       }
     }
+  }
+
+  async #runManagedAiWorkspaceTurn(chatId: number, aiModel: UserAiModelRecord): Promise<void> {
+    if (aiModel.config.provider !== "managed") {
+      throw new Error("Managed workspace turn received a provider-backed model.");
+    }
+    const config = aiModel.config;
+    const gatekeeper = [...this.storage.gatekeepers.list()].find((record) =>
+      record.creationSpec?.type === "ambient" &&
+      record.creationSpec.vendorId.toLowerCase() === config.vendorId.toLowerCase());
+    if (!gatekeeper) {
+      throw new Error(
+        `${aiModel.profile.name} is connected to your account but is unavailable in this workspace. ` +
+        "Reopen the workspace to refresh its managed-agent capability.",
+      );
+    }
+
+    const {workpieceId} = this.resolveWorkpieceRoot(undefined, true, chatId);
+    const meta = this.getChatMetaOrThrow(chatId);
+    const current = await this.getCurrentChatContent(chatId, meta);
+    let files = current.get(workpieceId);
+    let pin: {gadgetId: WorkpieceId, baseCommit: string} | undefined;
+    if (!files) {
+      const head = this.getGadgetHead(workpieceId);
+      files = head ? await this.gitStore.readCommitFiles(head) : new Map();
+      if (head) pin = {gadgetId: workpieceId, baseCommit: head};
+    }
+
+    const transcript = [...this.storage.chats.list({prefix: `${keyString(chatId)}.`})]
+      .filter((message): message is Extract<AiChatMessage, {type: "message"}> =>
+        message.type === "message" && !!message.message.trim())
+      .slice(-24)
+      .map((message) => `[${message.author.type.toUpperCase()}] ${message.message}`)
+      .join("\n\n")
+      .slice(-20_000);
+    const prompt = [
+      "You are the selected coding agent for a Concourse gadget workspace.",
+      "Work directly in the supplied workspace. Implement the user's latest request, keep the gadget runnable, and inspect existing files before changing them.",
+      "Do not merely describe edits: make them in the workspace. Do not create binary files, dependency caches, build output, or files outside the workspace.",
+      "Conversation transcript:",
+      transcript,
+    ].join("\n\n");
+    const request: ManagedAiWorkspaceRequest = {
+      model: config.model,
+      prompt,
+      files: [...files].map(([path, content]) => ({path, content})),
+    };
+
+    using approvalQueue = new RpcStub<ApprovalQueue>(
+      new ApprovalQueueImpl(this, gatekeeper.id, {from: "agent", chatId}),
+    );
+    const facet = this.getGatekeeperFacet(gatekeeper.id) as unknown as ManagedAiGatekeeperFacet;
+    const result = await facet.runManagedAiWorkspace(
+      request,
+      approvalQueue as unknown as ApprovalQueue,
+    );
+    if (result.model !== config.model) {
+      throw new Error("Managed workspace agent returned a result for the wrong model.");
+    }
+
+    if (result.changes.length > 0) {
+      const change: CodeChange = {
+        [workpieceId]: result.changes.map((entry) => [
+          entry.path,
+          entry.kind === "deleted" ? {remove: true} : {set: entry.content},
+        ]),
+      };
+      await this.appendAgentCodeChange(chatId, aiModel.profile, change, pin);
+    }
+    this.addChatMessages(chatId, aiModel.profile, [{type: "message", message: result.output}]);
+    this.flushAgentChanges(chatId, aiModel.profile, {});
   }
 
   // Resolve a agent callback return value, keyed by message sequence number.
