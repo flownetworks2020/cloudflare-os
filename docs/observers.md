@@ -329,8 +329,8 @@ Notes:
 
 Verification runs at `open()` and nowhere else, so a live session is only ever as verified as the
 scope that existed when it opened. When that scope **widens**, the overseer restarts the workspace
-rather than trying to re-verify sessions in place: `#restartIfShared(reason)` delegates to
-`scheduleAccessRestart(reason)` — the same DO abort used to revoke a collaborator (see
+rather than trying to re-verify sessions in place: `#restartIfShared(reason, affectedRole?)`
+delegates to `scheduleAccessRestart(reason)` — the same DO abort used to revoke a collaborator (see
 `docs/sharing.md`) — so every client's browser reconnects and re-runs
 `authorizeCollaborator`/`ensureObserver` against the new scope. It is a no-op when the workspace
 has no collaborators: the owner is never an observer, so there is nobody to re-verify.
@@ -344,10 +344,17 @@ Four events trigger it:
 | A merge that promotes a pending gadget or a pending binding edge into `use` scope | **use** scope, same reason |
 | A terminal `ensureObserver()` failure that scrubbed a previously-persisted account choice | Coverage *shrank*: the collaborator's other sessions still hold access the scrubbed choice used to justify. Scheduled when the failure becomes terminal, which a re-prompt the failing client never answers can defer (edge case 3) |
 
-The merge trigger compares the effective `use` scope before and after promotion rather than firing
-on any promotion: most merges promote something, and a promoted gadget with no bindings — or an edge
-onto a vendorless connection nobody is verified against — widens nothing and must not sever a
-shared workspace for nothing.
+The two roles widen independently, so each trigger passes the role it grew and the restart is
+skipped when no collaborator holds it: a new connection is in every `build` collaborator's scope
+at once but in no `use` collaborator's until a gadget binds it, and binding one enters `use` scope
+having been in `build` scope since it was created. A workspace shared only the other way has nobody
+with new verification requirements. The scrub trigger passes no role — it is not a widening, so it
+must sever regardless.
+
+Both binding triggers compare the effective `use` scope before and after rather than firing on any
+mutation: most merges promote something, and a promoted gadget with no bindings, an edge onto a
+vendorless connection nobody is verified against, or a second name onto a connection already in
+scope all widen nothing and must not sever a shared workspace for nothing.
 
 Shrinking scope needs no restart (`unbindWorkpiece`, `removeGatekeeper`): the prune in step 2
 handles it at the next open, and a narrower scope can never under-verify. Role *rises*
@@ -476,7 +483,13 @@ already in the JSDoc in `gatekeeper.ts`; add anything missing there rather than 
    the workspace when the denial is determined (see "Restarting when verification scope widens"),
    forcing every session on it to re-open and re-verify. "When determined" is later than the scrub
    itself: the failing client is offered a re-prompt first, and one it never answers defers the
-   restart for as long as it stays unanswered — the same residual as never re-opening. The residual
+   restart for as long as it stays unanswered — a delay the *failing collaborator* controls, and
+   the one place the 5 s tolerance in edge case 5 does not apply. It is accepted rather than closed
+   because stalling gains them nothing: declining to re-open at all preserves exactly the same
+   sessions for exactly as long, so the stall is a way to decline to leave, not a way in. Closing
+   it means scheduling the restart at the scrub, which aborts ~100 ms later and cuts off every
+   repair before a human could answer it — an interactive re-prompt and a 5 s enforcement bound
+   cannot both exist on this path. The residual
    under the lazy model is otherwise unchanged: a collaborator who never opens again is never
    asked, so nothing detects their revocation and nothing severs the session they already hold. An
    operational failure (vendor outage, expired credential) is treated the same way — the overseer
