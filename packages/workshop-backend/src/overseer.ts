@@ -1959,6 +1959,27 @@ class OverseerImpl implements AgentHooks {
     return {workpieceId: id};
   }
 
+  // Resolve the gadget a managed workspace-agent turn operates on. A managed agent has no
+  // `workpiece` tool parameter, so when the workspace has no legacy default gadget the turn
+  // targets the workspace's single chat-visible gadget; no gadget or several is refused in
+  // terms the user can act on, since no managed agent can supply a workpiece name.
+  resolveManagedWorkpiece(chatId: number): {workpieceId: WorkpieceId} {
+    if (this.defaultGadgetId !== undefined) {
+      return this.resolveWorkpieceRoot(undefined, true, chatId);
+    }
+    let visible = [...this.storage.gadgets.list()]
+        .filter(record => !record.pending || record.pending.chatId === chatId);
+    if (visible.length === 1) return {workpieceId: visible[0].id};
+    if (visible.length === 0) {
+      throw new Error(
+          "This workspace has no gadget for the workspace agent to work on. Ask the chat " +
+          "agent to build one first, then run the workspace agent again.");
+    }
+    throw new Error(
+        "This workspace has multiple gadgets, and the workspace agent cannot choose between " +
+        "them. Keep a single gadget in the workspace to use a managed workspace agent.");
+  }
+
   // Create a new gadget workpiece with the given title and binding name, no files, and no
   // bindings. The title is trimmed and must be non-empty (there are no default gadget titles;
   // every creation path names its gadget). The binding name must be valid (see
@@ -5888,7 +5909,7 @@ class OverseerImpl implements AgentHooks {
       );
     }
 
-    const {workpieceId} = this.resolveWorkpieceRoot(undefined, true, chatId);
+    const {workpieceId} = this.resolveManagedWorkpiece(chatId);
     const meta = this.getChatMetaOrThrow(chatId);
     const current = await this.getCurrentChatContent(chatId, meta);
     let files = current.get(workpieceId);
