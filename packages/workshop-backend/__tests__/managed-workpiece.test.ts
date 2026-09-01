@@ -9,10 +9,11 @@ declare module "cloudflare:workers" {
   }
 }
 
-// Exercises resolveManagedWorkpiece, the gadget resolution used by managed workspace-agent
+// Exercises ensureManagedWorkpiece, the gadget resolution used by managed workspace-agent
 // turns. A managed agent has no `workpiece` tool parameter, so modern (multi-gadget)
 // workspaces -- which never set the legacy defaultGadgetId -- must resolve their single
-// visible gadget rather than failing with tool-call instructions no managed agent can follow.
+// visible gadget, and an empty workspace must yield a fresh provisional gadget rather than
+// failing with tool-call instructions no managed agent can follow.
 
 let doCounter = 0;
 async function withImpl(fn: (impl: any) => Promise<void>): Promise<void> {
@@ -30,11 +31,11 @@ function addGadget(impl: any, id: number, bindingName: string,
   });
 }
 
-describe("resolveManagedWorkpiece", () => {
+describe("ensureManagedWorkpiece", () => {
   it("resolves the workspace's single gadget when there is no default gadget", async () => {
     await withImpl(async impl => {
       addGadget(impl, 7, "GADGET_A");
-      expect(impl.resolveManagedWorkpiece(1)).toEqual({ workpieceId: 7 });
+      expect(impl.ensureManagedWorkpiece(1, "Chat Title")).toEqual({ workpieceId: 7 });
     });
   });
 
@@ -42,21 +43,36 @@ describe("resolveManagedWorkpiece", () => {
     await withImpl(async impl => {
       addGadget(impl, 7, "GADGET_A");
       addGadget(impl, 8, "GADGET_B", { chatId: 2 });
-      expect(impl.resolveManagedWorkpiece(1)).toEqual({ workpieceId: 7 });
+      expect(impl.ensureManagedWorkpiece(1, "Chat Title")).toEqual({ workpieceId: 7 });
     });
   });
 
   it("counts a gadget provisional to the requesting chat as visible", async () => {
     await withImpl(async impl => {
       addGadget(impl, 7, "GADGET_A", { chatId: 1 });
-      expect(impl.resolveManagedWorkpiece(1)).toEqual({ workpieceId: 7 });
+      expect(impl.ensureManagedWorkpiece(1, "Chat Title")).toEqual({ workpieceId: 7 });
     });
   });
 
-  it("refuses a workspace with no gadget in user terms, not tool-call terms", async () => {
+  it("creates a provisional gadget for an empty workspace instead of refusing", async () => {
     await withImpl(async impl => {
-      expect(() => impl.resolveManagedWorkpiece(1)).toThrow(/no gadget for the workspace agent/i);
-      expect(() => impl.resolveManagedWorkpiece(1)).not.toThrow(/workpiece.*parameter/i);
+      const resolved = impl.ensureManagedWorkpiece(1, "  Chat Title  ");
+      expect(resolved.created).toMatchObject({
+        gadgetId: resolved.workpieceId, title: "Chat Title", bindingName: "GADGET",
+      });
+      const record = impl.storage.gadgets.get(resolved.workpieceId);
+      expect(record).toMatchObject({ title: "Chat Title", bindingName: "GADGET" });
+      expect(record.pending).toEqual({ chatId: 1 });
+      // The next resolution in the same chat adopts the provisional gadget.
+      expect(impl.ensureManagedWorkpiece(1, "Chat Title"))
+        .toEqual({ workpieceId: resolved.workpieceId });
+    });
+  });
+
+  it("falls back to a generic title when the chat has none", async () => {
+    await withImpl(async impl => {
+      const resolved = impl.ensureManagedWorkpiece(1, "   ");
+      expect(resolved.created?.title).toBe("New Gadget");
     });
   });
 
@@ -64,7 +80,7 @@ describe("resolveManagedWorkpiece", () => {
     await withImpl(async impl => {
       addGadget(impl, 7, "GADGET_A");
       addGadget(impl, 8, "GADGET_B");
-      expect(() => impl.resolveManagedWorkpiece(1)).toThrow(/multiple gadgets/i);
+      expect(() => impl.ensureManagedWorkpiece(1, "Chat Title")).toThrow(/multiple gadgets/i);
     });
   });
 
@@ -74,7 +90,7 @@ describe("resolveManagedWorkpiece", () => {
       addGadget(impl, 9, "GADGET_B");
       impl.storage.defaultGadgetId.put(3);
       impl.defaultGadgetId = 3;
-      expect(impl.resolveManagedWorkpiece(1)).toEqual({ workpieceId: 3 });
+      expect(impl.ensureManagedWorkpiece(1, "Chat Title")).toEqual({ workpieceId: 3 });
     });
   });
 });

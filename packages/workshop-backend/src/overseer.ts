@@ -1961,23 +1961,31 @@ class OverseerImpl implements AgentHooks {
 
   // Resolve the gadget a managed workspace-agent turn operates on. A managed agent has no
   // `workpiece` tool parameter, so when the workspace has no legacy default gadget the turn
-  // targets the workspace's single chat-visible gadget; no gadget or several is refused in
-  // terms the user can act on, since no managed agent can supply a workpiece name.
-  resolveManagedWorkpiece(chatId: number): {workpieceId: WorkpieceId} {
+  // targets the workspace's single chat-visible gadget. An empty workspace is a request to
+  // build, not an error: the turn gets a fresh provisional gadget (the managed agent cannot
+  // call createGadget itself), whose creation the caller records with its flush only if the
+  // turn actually produced files -- an unbacked record follows the normal reap path. Several
+  // gadgets are still refused in terms the user can act on.
+  ensureManagedWorkpiece(chatId: number, title: string): {
+    workpieceId: WorkpieceId,
+    created?: {gadgetId: WorkpieceId, title: string, bindingName: string},
+  } {
     if (this.defaultGadgetId !== undefined) {
       return this.resolveWorkpieceRoot(undefined, true, chatId);
     }
     let visible = [...this.storage.gadgets.list()]
         .filter(record => !record.pending || record.pending.chatId === chatId);
     if (visible.length === 1) return {workpieceId: visible[0].id};
-    if (visible.length === 0) {
+    if (visible.length > 1) {
       throw new Error(
-          "This workspace has no gadget for the workspace agent to work on. Ask the chat " +
-          "agent to build one first, then run the workspace agent again.");
+          "This workspace has multiple gadgets, and the workspace agent cannot choose between " +
+          "them. Keep a single gadget in the workspace to use a managed workspace agent.");
     }
-    throw new Error(
-        "This workspace has multiple gadgets, and the workspace agent cannot choose between " +
-        "them. Keep a single gadget in the workspace to use a managed workspace agent.");
+    let record = this.createGadget(title.trim() || "New Gadget", "GADGET", chatId);
+    return {
+      workpieceId: record.id,
+      created: {gadgetId: record.id, title: record.title, bindingName: record.bindingName!},
+    };
   }
 
   // Create a new gadget workpiece with the given title and binding name, no files, and no
@@ -5909,8 +5917,8 @@ class OverseerImpl implements AgentHooks {
       );
     }
 
-    const {workpieceId} = this.resolveManagedWorkpiece(chatId);
     const meta = this.getChatMetaOrThrow(chatId);
+    const {workpieceId, created} = this.ensureManagedWorkpiece(chatId, meta.title);
     const current = await this.getCurrentChatContent(chatId, meta);
     let files = current.get(workpieceId);
     let pin: {gadgetId: WorkpieceId, baseCommit: string} | undefined;
@@ -5962,7 +5970,13 @@ class OverseerImpl implements AgentHooks {
       await this.appendAgentCodeChange(chatId, aiModel.profile, change, pin);
     }
     this.addChatMessages(chatId, aiModel.profile, [{type: "message", message: result.output}]);
-    this.flushAgentChanges(chatId, aiModel.profile, {});
+    this.flushAgentChanges(chatId, aiModel.profile,
+        created && result.changes.length > 0 ? {createdGadgets: [created]} : {});
+    if (created && result.changes.length === 0) {
+      // The agent built nothing, so no log entry backs the provisional gadget;
+      // reap it now instead of leaving it for the next normal turn.
+      await this.reconcilePendingGadgets(chatId);
+    }
   }
 
   // Resolve a agent callback return value, keyed by message sequence number.
