@@ -59,6 +59,15 @@ describe("makeStoredAssistantMessage", () => {
     for (let block of expected.content) delete block.arguments;
     expect(stored).toEqual(expected);
   });
+
+  it("preserves non-secret credential attribution outside the replay message", () => {
+    let stored = makeStoredAssistantMessage(makeAssistantMessage());
+    stored.credentialClass = "user";
+
+    let result = rehydrateStoredAssistantMessage(stored, makeToolCallRecords(), 1, 2);
+
+    expect(result).toEqual(makeAssistantMessage());
+  });
 });
 
 describe("rehydrateStoredAssistantMessage", () => {

@@ -101,6 +101,12 @@ export type ModelHandle = {
    * is safe.
    */
   lastResponse?: { status: number; aiGatewayLogId?: string };
+
+  /**
+   * The non-secret credential class that authorized an Anthropic request. This is carried into
+   * the server-side agent-step ledger for operational attribution; never expose the key itself.
+   */
+  credentialClass?: "user" | "company";
 };
 
 function buildMetadata(initiator: AiChatAuthorInfo, context?: GatewayMetadataContext): GatewayMetadata {
@@ -368,14 +374,28 @@ export function getModel(env: Cloudflare.Env, config: AiModelConfig,
         options.sessionAffinity);
   }
 
+  // A user's persisted Anthropic key is the only provider key permitted to bypass the governed
+  // company gateway. Keep this decision at the single model-resolution chokepoint so every chat,
+  // title, compaction, and model-binding call observes the same precedence.
+  if (config.provider === "anthropic" && config.credentialClass === "user") {
+    return withCredentialClass(getModelDirect(config, options.sessionAffinity), "user");
+  }
+
   // Otherwise: when a platform AI Gateway is configured, route through it (platform-funded free
   // tier). The config's apiToken/apiUrl are ignored in that mode.
   let gwConfig = getAiGatewayConfig(env);
   if (gwConfig) {
-    return getModelViaGateway(gwConfig, config, initiator, options);
+    let handle = getModelViaGateway(gwConfig, config, initiator, options);
+    return config.provider === "anthropic" ? withCredentialClass(handle, "company") : handle;
   }
 
-  return getModelDirect(config, options.sessionAffinity);
+  let handle = getModelDirect(config, options.sessionAffinity);
+  return config.provider === "anthropic" ? withCredentialClass(handle, "user") : handle;
+}
+
+function withCredentialClass(handle: ModelHandle, credentialClass: "user" | "company")
+    : ModelHandle {
+  return {...handle, credentialClass};
 }
 
 // Route inference through the user's own account (unified billing) via their account's default AI

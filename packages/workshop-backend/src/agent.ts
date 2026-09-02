@@ -248,6 +248,8 @@ export type StoredToolCall = Omit<ToolCall, "arguments">;
  */
 export type StoredAssistantMessage = Omit<AssistantMessage, "content"> & {
   content: (TextContent | ThinkingContent | StoredToolCall)[];
+  /** Non-secret credential class used for this Anthropic request, if applicable. */
+  credentialClass?: "user" | "company";
 };
 
 /**
@@ -917,9 +919,11 @@ function jsonToolResultText(value: unknown): string {
 export function rehydrateStoredAssistantMessage(
     stored: StoredAssistantMessage, toolCalls: AiToolCall[] | undefined,
     chatId: number, sequence: number): AssistantMessage | undefined {
+  // Credential attribution is server-side audit data, not part of pi's provider message.
+  let {credentialClass: _, ...storedMessage} = stored;
   let toolCallsById = new Map((toolCalls ?? []).map(tc => [tc.toolCallId, tc]));
   let content: AssistantMessage["content"] = [];
-  for (let block of stored.content) {
+  for (let block of storedMessage.content) {
     if (block.type !== "toolCall") {
       content.push(block);
       continue;
@@ -934,7 +938,7 @@ export function rehydrateStoredAssistantMessage(
     }
     content.push({...block, arguments: record.input as Record<string, unknown>});
   }
-  return {...stored, content};
+  return {...storedMessage, content};
 }
 
 // Builds an assistant message reconstructed from the chat log, filling the bookkeeping fields pi
@@ -3078,6 +3082,9 @@ export async function runAgent(
           // The model-facing snapshot rides along for the overseer to persist beside the display
           // record.
           msg.modelData = makeStoredAssistantMessage(message);
+          if (handle.credentialClass) {
+            msg.modelData.credentialClass = handle.credentialClass;
+          }
           msgs.push(msg);
         }
 

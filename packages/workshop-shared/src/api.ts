@@ -1159,6 +1159,12 @@ export type ApiAiModelConfig = {
   apiToken: string;
 
   /**
+   * Internal resolution marker set only when the user Durable Object selects that user's
+   * Anthropic credential. It is stripped before model configuration is persisted.
+   */
+  credentialClass?: "user";
+
+  /**
    * Cloudflare account ID owning the Workers AI deployment the token authorizes. Required for
    * provider "cloudflare" (whose REST endpoint is account-scoped); unused for other providers.
    */

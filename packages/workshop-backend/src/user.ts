@@ -592,8 +592,10 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       throw new Error(`Provider "${config.provider}" is not available in AI Gateway mode.`);
     }
 
+    // Credential-class attribution is resolved for a request, never caller-controlled or stored.
+    let {credentialClass: _, ...storedConfig} = config;
     profile.type = "agent";
-    this.storage.aiModels.put({profile, config});
+    this.storage.aiModels.put({profile, config: storedConfig as AiModelConfig});
   }
 
   async deleteModel(id: string): Promise<void> {
@@ -740,12 +742,22 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
       profile: this.storage.profile.get()
     };
     if (modelId) {
-      // In AI Gateway mode, resolve gateway models first.
-      if (gwConfig) {
+      let userModel = this.storage.aiModels.get(modelId);
+      // A stored Anthropic key is selected here, in the owner user DO, before the company gateway.
+      // The marker contains no secret and makes getModel's credential choice explicit for every
+      // downstream call site that receives this resolved config.
+      if (userModel?.config.provider === "anthropic" && userModel.config.apiToken) {
+        result.aiModel = {
+          ...userModel,
+          config: {...userModel.config, credentialClass: "user"},
+        };
+      }
+      // Otherwise use the deployment's company-key model when one is configured.
+      if (!result.aiModel && gwConfig) {
         result.aiModel = gwConfig.resolveModel(modelId);
       }
       if (!result.aiModel) {
-        result.aiModel = this.storage.aiModels.get(modelId);
+        result.aiModel = userModel;
       }
       if (!result.aiModel) {
         result.aiModel = (await this.#managedAiModels()).find((model) => model.profile.id === modelId);

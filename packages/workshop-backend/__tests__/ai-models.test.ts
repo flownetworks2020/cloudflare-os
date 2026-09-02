@@ -84,6 +84,7 @@ describe("getModel AI Gateway routing", () => {
       accountId: "gateway-account-id",
       apiToken: "gateway-token",
     });
+    expect(handle.credentialClass).toBe("company");
 
     const request = await captureRequest(handle);
     expect(request.url).toBe(
@@ -100,6 +101,20 @@ describe("getModel AI Gateway routing", () => {
       gadgetId: "gadget-123",
       chatId: 7,
     });
+  }, 15000);
+
+  it("prefers a user's stored Anthropic key over the platform gateway", async () => {
+    const handle = getModel(
+        env(), {...ANTHROPIC_CONFIG, apiToken: "user-anthropic-key", credentialClass: "user"},
+        INITIATOR);
+
+    expect(handle.credentialClass).toBe("user");
+    expect(handle.model.baseUrl).toBe("https://api.anthropic.com");
+    expect(handle.aiGatewayLogRoute).toBeUndefined();
+
+    const request = await captureRequest(handle);
+    expect(request.headers.get("x-api-key")).toBe("user-anthropic-key");
+    expect(request.headers.get("cf-aig-authorization")).toBeNull();
   }, 15000);
 
   it("routes Google through the gateway's google-ai-studio passthrough", () => {
