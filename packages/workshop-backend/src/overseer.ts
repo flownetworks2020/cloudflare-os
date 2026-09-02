@@ -65,6 +65,59 @@ import {
 const logger = createWorkshopLogger("workshop.overseer");
 export const AGENT_RUNNING_ERROR_MESSAGE = "Agent is running, wait for it to finish.";
 
+/**
+ * The platform rules a managed workspace agent cannot discover for itself. The chat agent learns
+ * all of this from its own system prompt (see "Writing Gadgets" in agent.ts) and can probe the
+ * workspace with tools; a managed agent gets one prompt plus a file list, so a rule it breaks here
+ * surfaces only as a runtime failure whose message names something other than the real cause.
+ * Kept to the conventions that are invisible from the files themselves -- everything an agent can
+ * learn by reading the workspace stays out of it.
+ */
+export const MANAGED_GADGET_CONTRACT = [
+  "Gadget platform contract. These conventions are not visible in the workspace files, and code " +
+  "that breaks them fails with errors that do not name the real cause:",
+
+  "1. Files. A gadget's UI is served from client.js, which builds the entire interface by " +
+  "manipulating the DOM under document.body. There is no index.html -- adding one does not " +
+  "render, and the workspace keeps showing \"No gadget UI yet\". Server-side logic is an " +
+  "optional server.js. Persist server state in Durable Object storage via this.ctx.storage; " +
+  "in-memory state is lost whenever the object restarts.",
+
+  "2. Server entrypoint. server.js must `import { DurableObject } from \"cloudflare:workers\"` " +
+  "and export `class Gadget extends DurableObject` under exactly that name. Under any other " +
+  "name the runtime finds no entrypoint and every call fails as \"internal error; reference = " +
+  "<id>\" -- a message the runtime substitutes for the real one, so error handling in gadget " +
+  "code can neither see nor report the cause. Check the export name first whenever calls fail " +
+  "that way.",
+
+  "3. The client stub. client.js is prefixed with a module-scope `let gadget` binding holding an " +
+  "RPC stub to the Gadget object. Reference the bare identifier `gadget`; window.gadget is " +
+  "undefined. Because it is an RPC proxy its methods are not introspectable, so a " +
+  "`typeof gadget.someMethod` probe is not evidence about whether the method exists. Call the " +
+  "method and treat a rejected promise as the error state; never gate a call on a probe.",
+
+  "4. Gatekeeper bindings. A gatekeeper binding is resolved to an already-opened session, not to " +
+  "the client that opens one. In server.js call the session's methods directly off the binding " +
+  "-- `this.env.NAME.someMethod()` -- and do not call openSession() on it. When this.env.NAME is " +
+  "absent the resource is not connected: render an explicit blocked state naming the resource to " +
+  "connect to the workspace. Do not crash, and do not render an empty result as if it succeeded.",
+].join("\n\n");
+
+/**
+ * The whole prompt for a managed workspace-agent turn. Extracted from #runManagedAiWorkspaceTurn
+ * so its content is assertable without a live gatekeeper facet.
+ */
+export function buildManagedWorkspacePrompt(transcript: string): string {
+  return [
+    "You are the selected coding agent for a Concourse gadget workspace.",
+    "Work directly in the supplied workspace. Implement the user's latest request, keep the gadget runnable, and inspect existing files before changing them.",
+    "Do not merely describe edits: make them in the workspace. Do not create binary files, dependency caches, build output, or files outside the workspace.",
+    MANAGED_GADGET_CONTRACT,
+    "Conversation transcript:",
+    transcript,
+  ].join("\n\n");
+}
+
 let CODE_MODE_HARNESS =
 `import { WorkerEntrypoint, restore } from "cloudflare:workers";
 import agent from "agent.js";
@@ -5935,13 +5988,7 @@ class OverseerImpl implements AgentHooks {
       .map((message) => `[${message.author.type.toUpperCase()}] ${message.message}`)
       .join("\n\n")
       .slice(-20_000);
-    const prompt = [
-      "You are the selected coding agent for a Concourse gadget workspace.",
-      "Work directly in the supplied workspace. Implement the user's latest request, keep the gadget runnable, and inspect existing files before changing them.",
-      "Do not merely describe edits: make them in the workspace. Do not create binary files, dependency caches, build output, or files outside the workspace.",
-      "Conversation transcript:",
-      transcript,
-    ].join("\n\n");
+    const prompt = buildManagedWorkspacePrompt(transcript);
     const request: ManagedAiWorkspaceRequest = {
       model: config.model,
       prompt,
