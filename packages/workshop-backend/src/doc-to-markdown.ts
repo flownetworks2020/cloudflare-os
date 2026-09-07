@@ -4,10 +4,14 @@
 // documents) and chat attachment upload (converting uploaded PDF/Office documents). Parsing runs
 // on Workers AI infrastructure, not in this isolate.
 //
-// Embedded-image description is opt-in per call site because it is the one part of conversion
-// that spends Workers AI models (object detection followed by image-to-text). webFetch leaves it
-// off: it runs automatically against arbitrary third-party URLs, so its per-call cost would be
-// uncontrolled. Chat upload turns it on: it is user-initiated and bounded by the upload caps.
+// Images embedded in a document are never described, for any caller. Description is the one part
+// of conversion that spends Workers AI models (object detection followed by image-to-text) and the
+// one part that makes conversion slow, because the request waits on those calls; text extraction
+// alone is free and returns in seconds. Owner decision: documents are converted for their text.
+//
+// The setting only reaches formats that `ConversionOptions` gives an image key: HTML, DOCX and
+// PDF. Everything else -- spreadsheets above all -- takes the Workers AI default, which is outside
+// our control in either direction. See buildConversionOptions.
 
 import type { AiGatewayConfig } from "./ai-gateway";
 
@@ -26,13 +30,6 @@ export type DocToMarkdownInput = {
   mimeType: string;
   /** Document name, used by `toMarkdown()` as a format-detection hint. */
   name: string;
-  /**
-   * Describe images embedded in the document, writing a natural-language description into the
-   * markdown. Costs Workers AI model usage, so it defaults to off; see the file header.
-   */
-  describeImages?: boolean;
-  /** Upper bound on described images per document. Only meaningful with `describeImages`. */
-  maxConvertedImages?: number;
   /** Origin that relative links in HTML documents resolve against. */
   htmlHostname?: string;
   /** AI Gateway metadata identifying the call site. */
@@ -80,17 +77,19 @@ function buildGatewayOptions(
   return { id: gateway.sameAccountGateway, metadata };
 }
 
-// Image handling is set on every format key that accepts it, so a caller's choice holds whatever
-// the document turns out to be. `convertOGImage` is HTML-only.
+// `ConversionOptions` has exactly four keys -- `html`, `docx`, `image`, `pdf` -- and image
+// handling is switched off on each of the three that take a document, so no document reaching this
+// helper has its embedded images described. The rest of the supported formats (spreadsheets, CSV,
+// ODT, XML) have no key at all, so their embedded images follow the Workers AI default and are
+// outside a caller's control either way. `image` is omitted because image MIME types are never
+// converted here; `convertOGImage` is HTML-only.
 function buildConversionOptions(input: DocToMarkdownInput): ConversionOptions {
-  const images: EmbeddedImageConversionOptions = input.describeImages
-    ? { convert: true, maxConvertedImages: input.maxConvertedImages }
-    : { convert: false };
+  const images: EmbeddedImageConversionOptions = { convert: false };
 
   return {
     html: {
       hostname: input.htmlHostname,
-      images: { ...images, convertOGImage: input.describeImages === true },
+      images: { ...images, convertOGImage: false },
     },
     pdf: { images },
     docx: { images },

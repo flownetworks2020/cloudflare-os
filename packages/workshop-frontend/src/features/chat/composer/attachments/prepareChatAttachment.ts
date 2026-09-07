@@ -9,10 +9,16 @@ export const MAX_CONVERTIBLE_DOCUMENT_BYTES = 10 * 1024 * 1024;
 // far larger than a stored attachment because only the extracted text is kept. Whether a PDF
 // actually converts depends on the selected model's provider, which the server decides -- a large
 // PDF sent to a provider that reads PDFs natively is rejected there, by the stored-as-is cap.
+// Must stay byte-identical to CONVERTIBLE_MIME_TYPES in the backend's chat-attachment-validation.ts.
 const CONVERTIBLE_DOCUMENT_MIME_TYPES = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",       // .xlsx
+  "application/vnd.ms-excel",                                                // .xls
+  "application/vnd.ms-excel.sheet.macroenabled.12",                          // .xlsm
+  "application/vnd.ms-excel.sheet.binary.macroenabled.12",                   // .xlsb
+  "application/vnd.oasis.opendocument.text",                                 // .odt
+  "application/vnd.oasis.opendocument.spreadsheet",                          // .ods
 ]);
 
 export const isConvertibleDocumentMimeType = (mimeType: string): boolean =>
