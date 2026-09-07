@@ -11,6 +11,9 @@ import {
   contentTypeFromPath, isTextContentType, VENDOR_ID,
 } from "./context-types.js";
 import { metadataToSummary } from "./collection-kv.js";
+import {
+  admitContextCollectionWrite, CONTEXT_DOCUMENT_WRITE_SCHEMA, type ContextWriteGovernance,
+} from "./governed-context.js";
 import { domainName } from "./domain.js";
 import {
   readArtifactRepoDocuments, type ArtifactContextDocument,
@@ -371,12 +374,22 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
 
   async putContextDocument(
       path: string,
-      doc: { description: string; body: string; contentType?: string }): Promise<void> {
+      doc: { description: string; body: string; contentType?: string; schema?: string },
+      governance: ContextWriteGovernance & { schema?: string }): Promise<void> {
     this.#assertWebWritable();
-    validateDocumentPath(path);
-    let contentType = doc.contentType || contentTypeFromPath(path);
+    const { schema: requestedSchema, ...payload } = doc;
+    let admitted = admitContextCollectionWrite(governance.schema ?? requestedSchema ?? CONTEXT_DOCUMENT_WRITE_SCHEMA, {
+      path, ...payload,
+    }, governance);
+    validateDocumentPath(admitted.payload.path);
+    let contentType = admitted.payload.contentType || contentTypeFromPath(admitted.payload.path);
     let record = contextRecord({
-      path, name: baseName(path), description: doc.description, contentType, body: doc.body,
+      path: admitted.payload.path,
+      name: baseName(admitted.payload.path),
+      description: admitted.payload.description,
+      contentType,
+      body: admitted.payload.body,
+      governance: { schema: admitted.schema, ...admitted.governance },
       lastUpdated: new Date(),
     });
     let byteLength = record.body.byteLength + new TextEncoder().encode(
@@ -387,7 +400,7 @@ export class ContextCollectionDurableObject extends DurableObject<Cloudflare.Env
     }
 
     this.storage.transaction(() => {
-      let isNew = !this.storage.documents.get(path);
+      let isNew = !this.storage.documents.get(admitted.payload.path);
       // Use the file name from the path as the display name.
       this.#putDocument(record);
 

@@ -15,6 +15,7 @@ import {
   listPublicCollectionsFromKv, metadataToSummary,
 } from "./collection-kv.js";
 import { domainName } from "./domain.js";
+import { CONTEXT_DOCUMENT_WRITE_SCHEMA } from "./governed-context.js";
 
 /** Collections visible to this account's agents. */
 export async function loadEnabledContextCollections(
@@ -239,10 +240,16 @@ export class ContextApiImpl extends RpcTarget implements ContextApi {
   }
 
   async putContextDocument(collectionId: string, path: string, doc: {
-    description: string; body: string; contentType?: string;
+    description: string; body: string; contentType?: string; schema?: string;
   }): Promise<void> {
     await this.#assertCanWrite(collectionId);
-    await this.#collection(collectionId).putContextDocument(path, doc);
+    // The management capability, rather than the caller, binds the write to its account and the
+    // already-authorized collection. This makes both provenance fields non-forgeable by the UI.
+    await this.#collection(collectionId).putContextDocument(path, doc, {
+      actor: this.accountId,
+      packet: collectionId,
+      schema: doc.schema ?? CONTEXT_DOCUMENT_WRITE_SCHEMA,
+    });
   }
 
   async deleteContextDocument(collectionId: string, path: string): Promise<void> {

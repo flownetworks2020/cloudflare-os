@@ -170,6 +170,9 @@ export type ContextDocument = {
   /** Set when this document is a valid skill. */
   skillName?: string;
 
+  /** Provenance recorded when this document was admitted through the governed web-write path. */
+  governance?: { schema: string; actor: string; packet: string };
+
   lastUpdated: Date;
 };
 
@@ -329,7 +332,7 @@ export interface ContextApi extends RpcTarget {
   getContextDocument(collectionId: string, path: string): Promise<ContextDocument | null>;
   /** The document's display name is always derived from its path (the file name), so it's not passed. */
   putContextDocument(collectionId: string, path: string, doc: {
-    description: string; body: string; contentType?: string;
+    description: string; body: string; contentType?: string; schema?: string;
   }): Promise<void>;
   deleteContextDocument(collectionId: string, path: string): Promise<void>;
   moveContextDocument(collectionId: string, fromPath: string, toPath: string): Promise<void>;
