@@ -7345,6 +7345,7 @@ class OverseerImpl implements AgentHooks {
       throw new Error("Managed workspace agent returned a result for the wrong model.");
     }
 
+    const changes: AgentStepChange[] = [];
     if (result.changes.length > 0) {
       const change: CodeChange = {
         [workpieceId]: result.changes.map((entry) => [
@@ -7352,11 +7353,17 @@ class OverseerImpl implements AgentHooks {
           entry.kind === "deleted" ? {remove: true} : {set: entry.content},
         ]),
       };
-      await this.appendAgentCodeChange(chatId, aiModel.profile, change, pin);
+      changes.push(pin !== undefined ? {change, pin} : {change});
     }
-    this.addChatMessages(chatId, aiModel.profile, [{type: "message", message: result.output}]);
-    this.flushAgentChanges(chatId, aiModel.profile,
-        created && result.changes.length > 0 ? {createdGadgets: [created]} : {});
+    // One step barrier persists the agent's message and its edits in a single transaction
+    // (upstream #341 retired the separate append + flush; a managed turn is one step).
+    await this.commitAgentStep(chatId, aiModel.profile,
+        [{type: "message", message: result.output}],
+        {
+          changes,
+          createdGadgets: created && result.changes.length > 0 ? [created] : [],
+          createdWorktrees: [], addedBindings: [], worktreeCommits: [],
+        });
     if (created && result.changes.length === 0) {
       // The agent built nothing, so no log entry backs the provisional gadget;
       // reap it now instead of leaving it for the next normal turn.
