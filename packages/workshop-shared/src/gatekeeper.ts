@@ -22,8 +22,9 @@ import type { WorkerEntrypoint, DurableObject, RpcTarget, RpcStub } from "cloudf
  * A pagination cursor.
  *
  * This is an RPC object. Call `next()` repeatedly on the same cursor to fetch
- * subsequent batches of results. `next()` returns `null` once exhausted. Dispose the
- * cursor when finished.
+ * subsequent batches of results. `next()` returns `null` once exhausted. An empty
+ * batch does NOT mean exhaustion — a filtered page can be empty mid-walk — so drain
+ * on `null`, never on `length`. Dispose the cursor when finished.
  */
 export interface Cursor<T> {
   next(): Promise<T[] | null>;
@@ -502,26 +503,73 @@ export type GatekeeperConnectOptions = {
   resourceUrlPatterns?: string[];
 };
 
+/**
+ * The `type` field of the envelope `{type, ticket}` that a finished connect flow's browser tab
+ * delivers to the Workshop, and the name of the same-origin `BroadcastChannel` it delivers over when
+ * it has no opener to `postMessage` to. Versioned so the listener can ignore envelopes from an older
+ * or newer page.
+ */
+export const CONNECT_HANDOFF_MESSAGE_TYPE = "gadgets.connect-handoff.v1";
+
+/**
+ * The `type` field of the envelope `{type, ticket}` the Workshop posts back on the same
+ * `BroadcastChannel` once it has redeemed a broadcast ticket, so the completion page stops repeating
+ * the handoff and closes. Never sent to an opener: the Workshop closes that popup itself.
+ */
+export const CONNECT_HANDOFF_ACK_MESSAGE_TYPE = "gadgets.connect-handoff-ack.v1";
+
+/**
+ * What the browser tab that finished a connect flow must deliver to the Workshop, as returned by
+ * `GatekeeperConnectCallback.complete()` / `reconnectComplete()`.
+ *
+ * `ticket` is a single-use secret the Workshop redeems over the initiating user's authenticated RPC
+ * session (`AuthenticatedApi.completeConnectHandoff`); the staged grant is activated only when it
+ * arrives from that user. `targetOrigin` is the Workshop's origin. The completion page delivers the
+ * envelope one of two ways: `postMessage` to its opener with `targetOrigin` passed verbatim, so a
+ * browser drops the ticket if the opener is anyone else (sign-in popups keep their opener); or, for
+ * a connect popup the Workshop disowned before navigating it, a `BroadcastChannel` that the page
+ * opens only when it is itself on `targetOrigin` — the browser scopes the channel to that origin.
+ * Over the channel the page repeats the envelope until a Workshop tab acknowledges it
+ * (`CONNECT_HANDOFF_ACK_MESSAGE_TYPE`), since a tab whose session is mid-reconnect would miss a
+ * one-shot broadcast; the ticket is single-use server-side, so the repeats are harmless.
+ * Opaque to gatekeepers: they only render it into the completion page (see `connectHandoffPageHtml`
+ * in gatekeeper-kit).
+ */
+export type ConnectHandoff = {
+  targetOrigin: string;
+  ticket: string;
+};
+
 export interface GatekeeperVendor extends WorkerEntrypoint {
   /** Get display info for the service, suitable for display to a user. */
   describe(): Promise<VendorDescription>;
 
   /**
    * Start the auth flow to connect to the user's remote account. Returns the URL which the user
-   * should open in their browser in order to complete the flow. This URL will be opened in a new
-   * tab; when it completes, it should close itself using window.close().
+   * should open in their browser in order to complete the flow. The Workshop opens this URL as a
+   * popup it has disowned, so the provider's pages hold no handle to the Workshop window.
    *
    * When the flow completes, `callback.complete()` should be called to add the connection to the
-   * user's list of authorizations. (`callback` can be stored.)
+   * user's list of authorizations. (`callback` can be stored.) It returns a `ConnectHandoff` which
+   * the flow's final page must deliver to the Workshop (render it with gatekeeper-kit's
+   * `connectHandoffPageHtml`); the connection is not active until the Workshop has redeemed it.
    *
    * A typical implementation creates a UserAccount Durable Object to manage the authorization
    * flow, storing the callback in its storage, then directing the user to a URL that references
    * the DO. Once the user completes the flow, the DO invokes the callback. The DO should set an
    * alarm to delete itself after some timeout if the user fails to complete the flow.
    *
-   * SECURITY: The returned URL must include a cryptographic nonce (in addition to the DO ID) to
-   * prevent replay attacks. The nonce should be stored in the DO and verified when the user visits
-   * the URL. See gatekeeper-google for a reference implementation.
+   * SECURITY: The returned URL is a bearer capability: anyone who opens it can finish the flow, and
+   * nothing about the HTTP requests ties the browser that finishes to the user who started it. So
+   * an attacker can start a connect and trick a victim into opening the URL, whereupon the victim's
+   * provider credentials would be delivered into the attacker's Workshop account. The defence is
+   * the handoff: the flow must end on the kit's handoff page, which delivers the ticket only to
+   * the Workshop's origin, and the Workshop activates the grant only when the ticket comes back
+   * over the initiator's own session. Until then the gatekeeper holds the
+   * credentials but they are reachable from no Workshop account; if the ticket is never redeemed,
+   * the Workshop calls `GatekeeperUser.revoke()` on the staged account. The URL must additionally
+   * include a cryptographic nonce (in addition to the DO ID), stored in the DO and verified when the
+   * user visits the URL, to prevent replay. See gatekeeper-github for a reference implementation.
    *
    * `options.scopes` selects how much access to request (default "full"):
    *   - "full": the gatekeeper's full capability scopes (repos, docs, etc.). The resulting
@@ -584,7 +632,10 @@ export interface GatekeeperVendor extends WorkerEntrypoint {
 
 export interface GatekeeperConnectCallback extends WorkerEntrypoint {
   /**
-   * Indicates the connection completed successfully.
+   * Indicates the connection completed successfully. The Workshop *stages* the account: it is not
+   * added to the user's list until the returned handoff has been redeemed from the initiating
+   * user's browser (see `GatekeeperVendor.connectAccount`). The caller must render the handoff into
+   * the page the browser lands on; if the handoff is never redeemed the Workshop revokes `user`.
    *
    * `expiresAt`, if provided, indicates when the credentials are expected to stop being
    * refreshable. Do not pass the expiry of a short-lived access token if the gatekeeper can
@@ -593,7 +644,21 @@ export interface GatekeeperConnectCallback extends WorkerEntrypoint {
    * operation to fail. If not provided, the system relies on the gatekeeper calling
    * `credentialsExpired()` when a refresh or authorization failure is detected.
    */
-  complete(user: Fetcher<GatekeeperUser>, expiresAt?: Date): Promise<void>;
+  complete(user: Fetcher<GatekeeperUser>, expiresAt?: Date): Promise<ConnectHandoff>;
+
+  /**
+   * Indicates a `reconnect()` / `ensureResources()` flow finished and the new credentials are
+   * *staged* in the gatekeeper (not yet live; see `GatekeeperUser.commitReconnect`). Returns the
+   * handoff the flow's final page must deliver to the Workshop. Once the Workshop has verified the
+   * completing browser belongs to the account's owner it calls `commitReconnect(stageId)` on the
+   * account, then treats the credentials as restored.
+   *
+   * `stageId` identifies the staged credentials this completion produced (gatekeeper-kit's
+   * `stageCredentials` returns one); the Workshop hands it back in `commitReconnect()` so the
+   * ticket it mints activates exactly these credentials and no later stage's. `expiresAt` is the
+   * staged credentials' expected refreshability expiry, if known (same semantics as `complete()`).
+   */
+  reconnectComplete(stageId: string, expiresAt?: Date): Promise<ConnectHandoff>;
 
   // Note: If the authorization flow fails, the error can be displayed directly to the user, and
   // the callback can be discarded.
@@ -609,8 +674,11 @@ export interface GatekeeperConnectCallback extends WorkerEntrypoint {
   credentialsExpired(): Promise<void>;
 
   /**
-   * Called when credentials have been restored (e.g., after a reconnect flow completes).
-   * `expiresAt` is the new expected refreshability expiration date, if known.
+   * Called when credentials have been restored without a browser flow (e.g. a token refresh that
+   * succeeds after an earlier failure was reported via `credentialsExpired()`). A reconnect flow
+   * that finishes in a browser must call `reconnectComplete()` instead, since credentials
+   * restored there are not trusted until the handoff is redeemed. `expiresAt` is the new expected
+   * refreshability expiration date, if known.
    */
   credentialsRestored(expiresAt?: Date): Promise<void>;
 }
@@ -668,15 +736,35 @@ export interface GatekeeperUser extends WorkerEntrypoint {
 
   /**
    * Start the flow to refresh/replace credentials on this account. Returns the URL for the user
-   * to visit in a new tab to complete re-authentication. When the flow completes, the
-   * GatekeeperConnectCallback (provided during the original connectAccount() flow) will be
-   * notified via credentialsRestored(). The existing account Fetcher and all gatekeeper bindings
-   * created through it continue to work with the new credentials.
+   * to visit in a popup to complete re-authentication. When the flow completes, the gatekeeper
+   * stages the new credentials, notifies the GatekeeperConnectCallback (provided during the
+   * original connectAccount() flow) via reconnectComplete(stageId), and renders the returned
+   * handoff on the final page. The Workshop then calls commitReconnect(stageId), after which the
+   * existing account Fetcher and all gatekeeper bindings created through it work with the new
+   * credentials.
    *
-   * SECURITY: As with connectAccount(), the returned URL must include a cryptographic nonce to
-   * prevent replay attacks.
+   * SECURITY: As with connectAccount(), the returned URL is a bearer capability that may be opened
+   * by someone other than the account's owner. The flow must therefore *stage* the new credentials
+   * rather than write them over the live ones: gadgets already bound to this account read its live
+   * credentials directly, so a live write would hand them a phished victim's tokens with no
+   * Workshop-side check in the way. Staged credentials become live only in commitReconnect(). The
+   * URL must also include a cryptographic nonce to prevent replay.
    */
   reconnect(): Promise<{url: string}>;
+
+  /**
+   * Make the credentials staged under `stageId` by a reconnect()/ensureResources() flow live,
+   * replacing the account's current credentials. Called by the Workshop once the completing browser
+   * has been verified as the owner's (see `GatekeeperConnectCallback.reconnectComplete`). Throws if
+   * nothing is staged, the stage has expired, or the current stage is a different one; the live
+   * credentials are then left as they were.
+   *
+   * SECURITY: Two reconnects can overlap — the owner's, and one a phished victim was tricked into
+   * finishing, each replacing the stage. Their tickets are redeemed separately, so a commit of
+   * "whatever is staged" would let the ticket from one flow activate the other's credentials. The
+   * id ties each ticket to the credentials whose completion minted it.
+   */
+  commitReconnect(stageId: string): Promise<void>;
 
   /**
    * For vendors that advertise `providesAuth`, returns the account's email address for use as the
@@ -695,9 +783,12 @@ export interface GatekeeperUser extends WorkerEntrypoint {
    * on this account, expanding the grant if needed.
    *
    * Returns the URL for the user to visit to authorize them, or no URL if nothing was needed.
-   * Gatekeepers with no grantable resource types should return no URL.
+   * Gatekeepers with no grantable resource types should return no URL. A returned URL completes
+   * exactly like reconnect(): staged credentials, reconnectComplete(stageId), then
+   * commitReconnect(stageId).
    *
-   * SECURITY: As with connectAccount(), any returned URL must include a cryptographic nonce.
+   * SECURITY: As with reconnect(), any returned URL is a bearer capability, so the flow must stage
+   * the widened grant rather than write it live, and the URL must include a cryptographic nonce.
    */
   ensureResources(resourceUrlPatterns: string[]): Promise<{url?: string}>;
 
@@ -868,6 +959,33 @@ export interface Gatekeeper<Session> extends DurableObject {
   /** Returns the provider for describe().hasSlashCommands, if supported. */
   getSlashCommandProvider?(): Promise<SlashCommandProvider>;
 
+  /**
+   * Request that the gatekeeper populate the git cache with the given objects (e.g., a git
+   * commit), as well as related objects (e.g., the commit's file tree, parents, etc.).
+   *
+   * The overseer will only ever pull objects that it knows the gatekeeper has, for one of the
+   * following reasons:
+   * * The object is a commit this gatekeeper advertised via `GitCache.advertiseCommit()`.
+   * * The object was referenced by another object populated by this gatekeeper (e.g. it is the
+   *   parent of another commit from this gatekeeper).
+   * * The object had been populated by this gatekeeper in the past, but was subsequently evicted
+   *   from the cache.
+   *
+   * The Gatekeeper must put() each of the given objects into the cache (or throw an exception),
+   * with one carve-out: a requested *blob* that the hints' own `filterBlobSize` suppressed is
+   * reported by returning successfully without it, not by throwing. The overseer surfaces that
+   * absence to the agent as an oversized-file read error.
+   *
+   * The Gatekeeper MAY also put other related objects into the cache. `hints` provides hints
+   * about what objects the caller would like to have prefetched into the cache, but the
+   * gatekeeper is not technically required to honor these hints. (Failing to prefetch related
+   * objects may lead to performance problems, however.)
+   *
+   * If the gatekeeper ever uses `GitCache`, it MUST implement `gitPull()`. Otherwise, it can leave
+   * the method unimplemented.
+   */
+  gitPull?(oids: GitOid[], cache: RpcStub<GitCache>, hints: GitPullHints): Promise<void>;
+
   // ---------------------------------------------------------------------------
   // Callbacks invoked by the overseer to apply (or reject) actions that were previously queued
   // for approval via the ApprovalQueue.
@@ -885,8 +1003,20 @@ export interface Gatekeeper<Session> extends DurableObject {
    * Depending on policy conditions, an action may be approved and applied automatically. However,
    * the gatekeeper is nevertheless expected to submit all actions for approval; there is no mode
    * in which it's OK to skip the check.
+   *
+   * To the maximum extent possible, implementations of `applyAction()` should be idempotent, as
+   * a poorly-timed crash may cause the overseer to fail to record that an `applyAction()`
+   * completed, and the user will likely then try to apply the action again in the future.
+   *
+   * `cache` provides access to the workspace's git cache, which is often needed at apply time
+   * (when no `ObservationAuthorizer` is available). In fact, this stub points to a wrapper around
+   * `GitCache` that is scoped specifically for this action, which enables the `buildPack()` method
+   * to function -- it will build a pack specifically for the set of commits that had been listed
+   * in the action's `ActionDescription.pushedCommits`. Actions that don't interact with git can
+   * ignore this parameter (and can even omit the parameter from their `applyAction()`
+   * declaration).
    */
-  applyAction(action: number): Promise<void>;
+  applyAction(action: number, cache: RpcStub<GitCache>): Promise<void>;
 
   /**
    * Indicates that an action was rejected by the user. The gatekeeper should clean up any
@@ -937,6 +1067,17 @@ export interface ObservationAuthorizer extends RpcTarget {
    * data to the gadget, this is OK.
    */
   authorizeObservation(description: ObservationDescription): Promise<void>;
+
+  /**
+   * Get the workspace's git cache, scoped to this gatekeeper (see `GitCache` for the view rules).
+   *
+   * A gatekeeper whose API returns git commit IDs should advertise them through this cache
+   * (`GitCache.advertiseCommit()`) so that the overseer knows where to pull them from when they
+   * are needed (see `Gatekeeper.gitPull()`). It may also pre-populate the cache with the commits'
+   * actual content (`GitCache.put()`); a hash-verified `put()` upgrades an advertisement to proof
+   * of possession.
+   */
+  getGitCache(): Promise<GitCache>;
 }
 
 /**
@@ -1209,6 +1350,32 @@ export type ActionDescription = {
   description: string;
 
   /**
+   * If present, applying this action will push the named commits to the remote resource this
+   * gatekeeper fronts.
+   *
+   * At the time the action is submitted, the overseer may validate whether it makes sense to push
+   * this commit (and the transitive closure of objects that come with it) to this gatekeeper, and
+   * whether the gatekeeper is allowed to receive these commits. A variety of security policies,
+   * possibly configured by the user or site administrator, may affect this decision. One common
+   * policy is that a commit should not be pushed to a remote if its ancestors did not come from
+   * that remote -- a policy which prevents accidentally pushing commits to the wrong repository,
+   * possibly exposing confidential data. In any case, the Overseer typically applies such policies
+   * at submit time (rather than apply time) and, if they indicate the action should not proceed,
+   * will cause `submitAction()` to throw an exception.
+   *
+   * Even when the action is successfully submitted, the Gatekeeper is obliged -- as always -- not
+   * to actually transmit any data until the action is approved and applied with `applyAction()`.
+   * As always, though, the Gatekeeper is expected to simulate the effects of the action
+   * immediately. E.g. if the agent queries the state of the remote repo, the Gatekeeper should
+   * indicate that the push has completed.
+   *
+   * In order to assist in simulation, the `GitCache` passed to the Gatekeeper will always provide
+   * access to all objects which are pending a push (part of a submitted but not-yet-applied
+   * action). See `GitCache` for more info.
+   */
+  pushedCommits?: GitOid[];
+
+  /**
    * Does the Gatekeeper implement `revertAction()` for this action?
    *
    * It is recommended that all actions implement automatic revert. But, if an action is not able
@@ -1319,10 +1486,7 @@ export interface HookController<Hook extends RpcTarget> extends WorkerEntrypoint
    *
    * If the hook was already enabled, the previously-registered `initiator` should be replaced.
    *
-   * `target` identifies where the hook delivers, for gatekeepers that display or link to it. A
-   * gatekeeper that doesn't need it may ignore the value, but must still *declare* the parameter:
-   * RPC argument validation is generated from the declared signature, and a call carrying an
-   * argument the receiver does not declare is rejected.
+   * `target` identifies where the hook delivers, for gatekeepers that display or link to it.
    */
   enable(initiator: Fetcher<HookInitiator<Hook>>, target: HookTargetMetadata): Promise<void>;
 
@@ -1351,4 +1515,206 @@ export interface HookInitiator<Hook extends RpcTarget> extends WorkerEntrypoint 
    * causes side effects, which should be registered as actions.
    */
   startHook(): Promise<{callback: RpcStub<Hook>, approvalQueue: RpcStub<ApprovalQueue>}>;
+}
+
+/**
+ * git object name, aka "oid", aka "hash" (or "commit id/hash" when it refers to a commit
+ * specifically).
+ */
+export type GitOid = string;
+
+/**
+ * Types of git objects.
+ *
+ * (The "tag" type is a tag annotation object; this type isn't really used by Cloudflare OS
+ * workspaces but is included here because it is one of the four git object types.)
+ */
+export type GitObjectType = "commit" | "tree" | "blob" | "tag";
+
+/**
+ * Interface to the workspace's git object cache, as exposed to one gatekeeper.
+ *
+ * Each workspace maintains a cache of git objects, i.e. commits and their file trees. This cache
+ * is used to store code backing gadgets as well as local checkouts of git repositories that the
+ * agent is working on.
+ *
+ * Any gatekeeper that provides access to a remote git repo should populate the workspace's git
+ * cache with objects from that repo. This allows the gatekeeper's API to pass around git object
+ * IDs (especially commit IDs) without having to provide a whole API for reading the content.
+ * An agent can mount a git commit ID as a workpiece, read and edit the files, create new commits,
+ * and pass those commit IDs back into the gatekeeper, perhaps to push up to the remote repo.
+ *
+ * Note that the git cache does NOT include the classic git "ref" layer, i.e. it does not track
+ * branches, tags, etc. It is entirely up to a gatekeeper to provide an API for that if desired.
+ *
+ * The workspace may evict objects from the cache. It expects that after doing so, it can later
+ * repopulate it by "pulling" it from the same gatekeeper -- see `Gatekeeper.gitPull()`. The
+ * Workspace also expects that if it received a particular object from a particular Gatekeeper, it
+ * can also pull all the objects referenced by that object (e.g. a commit's parent, or its file
+ * tree) from the same gatekeeper. Thus, the workspace can lazily populate the stuff that it needs.
+ *
+ * Every `GitCache` stub is scoped to the gatekeeper it was handed to. Reads (`get()`, `has()`,
+ * `stat()`) answer for exactly two sets of objects, and return null/false for everything else:
+ *
+ * 1. Objects which the Gatekeeper itself has previously written to cache using `put()`, or which
+ *    were successfully pushed to this gatekeeper by an applied action -- so long as said objects
+ *    haven't been evicted in the meantime. In other words, these ane objects that are known to
+ *    be on the remote already, and also happen to be available in local cache.
+ * 2. Objects queued for push to this gatekeeper by a submitted, not-yet-applied action (see
+ *    `ActionDescription.pushedCommits`). These objects are NOT believed to be on the remote
+ *    already, but are planned to pushed to it assuming the submitted action is later approved.
+ *
+ * This is intended to assist the Gatekeeper in simulation: If the Gatekeeper provides an API to
+ * the agent/Gadget by which the caller can read back a specific commit, the Gatekeeper should
+ * first try to read that commit from cache, and fall back to reading it from the remote. This
+ * strategy correctly produces the commit if and only if the Gatekeeper is "supposed to" have it,
+ * for simulation purposes.
+ */
+export interface GitCache extends RpcTarget {
+  /**
+   * Read the given git object from the cache. Returns null if the object is not in this
+   * gatekeeper's view (see the interface doc for the view rules).
+   *
+   * `content` is strictly the object payload. It does NOT include the `<type> <size>\0` header,
+   * even though that header is included in the hash.
+   *
+   * An object that is pending push to this gatekeeper but not locally cached is pulled through
+   * from its recorded source on demand, so a queued cross-remote push can be simulated as if it
+   * had already landed. Simulation contract: a commit that reads back while pending push should
+   * be treated, for simulation purposes, as already pushed. The optional `hints` are advisory
+   * prefetch guidance for that pull-through -- a gatekeeper walking objects by hand can request
+   * related objects up front rather than faulting once per `get()`. When omitted, the pull
+   * requests exactly this object, with its type taken from recorded metadata.
+   */
+  get(id: GitOid, hints?: GitPullHints): Promise<{type: GitObjectType, content: Uint8Array} | null>;
+
+  /** Return whether the given object exists, under the same scoped view as `get()`. */
+  has(id: GitOid): Promise<boolean>;
+
+  /**
+   * Return the type and byte size of the given object, or null, under the same scoped view as
+   * `get()`.
+   */
+  stat(id: GitOid): Promise<{type: GitObjectType, size: number} | null>;
+
+  /**
+   * Add an object to cache. Returns the computed oid.
+   *
+   * As with `get()`, the `content` must NOT include the `<type> <size>\0` header.
+   *
+   * This interface is intentionally designed to make it impossible to poison the cache: the oid
+   * is computed from the bytes themselves. If the returned oid doesn't match what the gatekeeper
+   * expected, it should probably throw an exception.
+   *
+   * A `put()` is also the system's proof of possession: it is what records that this gatekeeper's
+   * remote holds the object, making it readable through this stub and usable as a push-ancestry
+   * anchor (see `ActionDescription.pushedCommits`).
+   */
+  put(type: GitObjectType, content: Uint8Array): Promise<GitOid>;
+
+  /**
+   * Declare that this gatekeeper's remote possesses the given commit and can provide it (and the
+   * objects it references) on demand via `Gatekeeper.gitPull()`. A gatekeeper whose API returns
+   * commit IDs to the agent/Gadget should advertise each one, so that if the agent later mounts
+   * a commit as a worktree, the overseer knows to pull it from this gatekeeper.
+   */
+  advertiseCommit(commitId: GitOid): Promise<void>;
+
+  /**
+   * Build a packfile carrying the applying action's full pending-push closure.
+   *
+   * Only the action-scoped stub passed to `Gatekeeper.applyAction()` supports this; calling it on
+   * any other stub (e.g. one obtained via `ObservationAuthorizer.getGitCache()` during a session)
+   * throws. It takes no arguments: the commit list is the applying action's own
+   * `ActionDescription.pushedCommits`, combined with the closure of objects that the overseer
+   * believes the remote may not already have.
+   *
+   * The stream contains a packfile with the standard SHA-1 trailer, suitable for feeding directly
+   * into a send-pack request. The overseer completes the closure itself, pulling any
+   * locally-absent objects from their recorded sources before they are streamed; if a source
+   * is no longer available (e.g. its gatekeeper was disconnected), the call fails with an error
+   * naming the gatekeeper to reconnect.
+   */
+  buildPack(): Promise<ReadableStream<Uint8Array>>;
+
+  /**
+   * Consumes a standard git packfile and inserts all the objects within into the git cache. This
+   * is exactly equivalent to if the Gatekeeper decoded the packfile itself and `put()` each object
+   * into the cache.
+   */
+  consumePack(pack: ReadableStream<Uint8Array>): Promise<GitOid[]>;
+
+  /**
+   * Returns whether `ancestor` is reachable from `descendant` (inclusive: a commit is its own
+   * ancestor) by following parent links over commits in the workspace cache. The walk reads only
+   * locally cached objects and never pulls; a parent chain that leaves the cache simply stops, so
+   * `false` means "not verifiable as an ancestor over cached history" -- exactly the grade of
+   * answer a queue-time fast-forward check needs. Throws (rather than returning false) if
+   * `descendant` is not a locally cached commit, so a caller can distinguish "verified not an
+   * ancestor" from "history not available".
+   *
+   * Deliberately NOT restricted to this gatekeeper's scoped view: the caller names both oids, and
+   * oids are treated as capabilities throughout the system, so learning one bit of ancestry
+   * between two oids the caller already holds reveals nothing it couldn't learn by other means.
+   * This is what lets a gatekeeper validate a push's fast-forward requirement *before* submitting
+   * the action, while the commits to be pushed are not yet in its scoped view (they only enter it
+   * when `submitAction()` records the push -- see `ActionDescription.pushedCommits`).
+   */
+  isAncestor(ancestor: GitOid, descendant: GitOid): Promise<boolean>;
+
+  // TODO(someday): putStream() method for large blobs?
+}
+
+/**
+ * Hints provided to `Gatekeeper.gitPull()` which may help the gatekeeper decide how much to pull.
+ *
+ * Hints are advisory: honoring them well affects performance, not correctness (with one
+ * exception -- see `Gatekeeper.gitPull()`'s carve-out for blobs suppressed by `filterBlobSize`).
+ *
+ * The options are designed with the details of the standard git protocol in mind.
+ */
+export type GitPullHints = {
+  /** The expected type of object. The overseer always knows what it is requesting. */
+  type: GitObjectType;
+
+  /**
+   * Name of the object that referenced this one. E.g. a tree may be referenced by a commit or
+   * a parent tree. A commit may be referenced by a child commit. This is always an oid that was
+   * previously put() by this same gatekeeper.
+   */
+  referencedBy?: GitOid;
+
+  /**
+   * How far back in the commit history to go.
+   *
+   * The overseer uses this to request shallow clones. In fact, the overseer typically always
+   * requests only shallow clones, which is why this property is required: the intuitive default
+   * would be to request a full clone, but that is almost never what we want in Cloudflare OS.
+   */
+  commitHistory:
+    | { kind: "full" }
+    | { kind: "depth", depth: number }
+    | { kind: "since", since: Date };
+
+  /**
+   * Omit blobs of at least this size. 0 = do not fetch blobs at all.
+   *
+   * May be set together with `filterTreeDepth`. A gatekeeper whose transport cannot combine the
+   * two (git's upload-pack accepts a single filter-spec per fetch; combining requires the
+   * `combine:` filter grammar) may honor only the tree filter -- sound because hints are
+   * advisory, at the cost of over-fetching some blobs.
+   */
+  filterBlobSize?: number;
+
+  /**
+   * Omit trees deeper than this.
+   *
+   * 0 = Don't fetch any trees (implies no blobs either).
+   * 1 = Only fetch the root at each commit.
+   * 2 = Only fetch the root and first-level subdirectories.
+   * n = ...
+   *
+   * See `filterBlobSize` for combining the two filters.
+   */
+  filterTreeDepth?: number;
 }

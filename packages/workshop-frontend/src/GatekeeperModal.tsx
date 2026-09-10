@@ -1,6 +1,6 @@
 import { logRpcFailure } from './rpcErrors'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Dialog, useKumoToastManager, type PortalContainer } from '@cloudflare/kumo'
+import { Dialog, useKumoToastManager } from '@cloudflare/kumo'
 import {
   CaretDown,
   CaretLeft,
@@ -35,6 +35,8 @@ import { matchesResourceUrl } from './resourceMatching'
 import { reportIssue } from './errorReporting'
 import { useSiteName } from './ServerConfigContext'
 import { AccountsSubscriberAdapter } from './accountsSubscriber'
+import { useDialogSelectPortalContainer } from './useDialogSelectPortalContainer'
+import { openConnectWindow } from './connectHandoff'
 
 export interface GatekeeperModalProps {
   open: boolean
@@ -212,7 +214,7 @@ export default function GatekeeperModal({
   const footerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollContentRef = useRef<HTMLDivElement>(null)
-  const [selectPortalContainer, setSelectPortalContainer] = useState<PortalContainer>(null)
+  const selectPortalContainer = useDialogSelectPortalContainer()
 
   const [spawnerDisplayName, setSpawnerDisplayName] = useState('')
   const [spawnerModelId, setSpawnerModelId] = useState<string | null>(null)
@@ -227,18 +229,6 @@ export default function GatekeeperModal({
   const configuratorFrameRef = useRef<ConfiguratorFrameState | null>(null)
   const configuratorCollectResourceUrlRef = useRef<(() => Promise<string>) | null>(null)
   const nextConfiguratorFrameKeyRef = useRef(0)
-
-  useEffect(() => {
-    const el = document.createElement('div')
-    el.style.position = 'relative'
-    el.style.zIndex = '1100'
-    document.body.appendChild(el)
-    setSelectPortalContainer(el)
-    return () => {
-      setSelectPortalContainer(null)
-      el.remove()
-    }
-  }, [])
 
   const updateConfiguratorFrameState = (next: ConfiguratorFrameState | null) => {
     const previous = configuratorFrameRef.current
@@ -598,8 +588,8 @@ export default function GatekeeperModal({
     setConnectingVendor(vendorId)
     try {
       const result = await authenticatedApi.connectAccount(vendorId, resourceUrlPatterns)
-      window.open(result.url, '_blank', 'noopener,noreferrer')
-      toasts.add({ title: 'Complete the account connection in the new tab.', variant: 'success' })
+      openConnectWindow(result.url)
+      toasts.add({ title: 'Complete the account connection in the pop-up window.', variant: 'success' })
     } catch (error) {
       console.error('Failed to initiate connection:', error)
       reportIssue('gatekeeper.connect-start', error, { gatekeeperVendorId: vendorId })
@@ -620,8 +610,8 @@ export default function GatekeeperModal({
     try {
       const result = await authenticatedApi.ensureAccountResources(accountId, missing)
       if (result.url) {
-        window.open(result.url, '_blank', 'noopener,noreferrer')
-        toasts.add({ title: 'Grant the additional access in the new tab.', variant: 'success' })
+        openConnectWindow(result.url)
+        toasts.add({ title: 'Grant the additional access in the pop-up window.', variant: 'success' })
       }
       // The new grant arrives via subscribeConnectedAccounts(); the account's flag then clears and
       // the configurator loads automatically.
@@ -640,8 +630,8 @@ export default function GatekeeperModal({
     setReconnectingAccountId(accountId)
     try {
       const result = await authenticatedApi.reconnectAccount(accountId)
-      window.open(result.url, '_blank', 'noopener,noreferrer')
-      toasts.add({ title: 'Complete the account reconnect in the new tab.', variant: 'success' })
+      openConnectWindow(result.url)
+      toasts.add({ title: 'Complete the account reconnect in the pop-up window.', variant: 'success' })
     } catch (error) {
       console.error('Failed to initiate reconnect:', error)
       reportIssue('gatekeeper.reconnect-start', error, {
