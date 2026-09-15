@@ -356,11 +356,11 @@ export class GatekeeperVendor extends WorkerEntrypoint<Env> implements Gatekeepe
       url: "https://www.microsoft.com",
       logo: { url: MICROSOFT_LOGO_URL },
       color: "#eef1f6",
-      tagline: "Sign in with your Microsoft 365 work account",
+      tagline: "Connect your Microsoft 365 Outlook mailbox",
       description:
-          "Connect your Microsoft 365 account so Cloudflare OS can confirm who you are using your " +
-          "organization's Entra ID directory. Sign-in uses the account you already have — no " +
-          "separate password — and the connection is limited to reading your own profile.",
+          "Connect your Microsoft 365 account so agents can read and search your Outlook mail. " +
+          "Marking messages read or unread, moving them, and creating reply drafts each wait for " +
+          "your approval, and nothing is ever sent: drafts stay in Outlook for you to send.",
       providesAuth: true,
       providesAuthProfile: true,
     };

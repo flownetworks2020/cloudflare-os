@@ -549,6 +549,94 @@ describe("approved actions", () => {
   });
 });
 
+// Every mailbox write is governed by the Workshop's per-action approval queue: the verb is shipped
+// and works once approved, but it is never auto-approvable, so each call surfaces for a human.
+describe("approval gate per write verb", () => {
+  const writeVerbs: {
+    verb: string;
+    call: (message: OutlookMessage) => Promise<void>;
+    tag: string;
+    wrote: (calls: { url: string; init: RequestInit }[]) => boolean;
+  }[] = [
+    {
+      verb: "markRead",
+      call: message => message.markRead(),
+      tag: "outlookMarkRead",
+      wrote: calls => calls.some(call =>
+        call.init.method === "PATCH" && call.init.body === JSON.stringify({ isRead: true })),
+    },
+    {
+      verb: "markUnread",
+      call: message => message.markUnread(),
+      tag: "outlookMarkRead",
+      wrote: calls => calls.some(call =>
+        call.init.method === "PATCH" && call.init.body === JSON.stringify({ isRead: false })),
+    },
+    {
+      verb: "moveToFolder",
+      call: message => message.moveToFolder("folder-archive"),
+      tag: "outlookMoveMessage",
+      wrote: calls => calls.some(call =>
+        call.init.method === "POST" && call.url.endsWith("/move")),
+    },
+    {
+      verb: "createReplyDraft",
+      call: message => message.createReplyDraft("On it."),
+      tag: "outlookReplyDraft",
+      wrote: calls => calls.some(call => call.url.endsWith("/createReply")),
+    },
+    {
+      verb: "createReplyAllDraft",
+      call: message => message.createReplyAllDraft("On it."),
+      tag: "outlookReplyDraft",
+      wrote: calls => calls.some(call => call.url.endsWith("/createReplyAll")),
+    },
+  ];
+
+  for (const { verb, call, tag, wrote } of writeVerbs) {
+    it(`${verb} is not auto-approvable, surfaces for approval, and writes only once approved`,
+        async () => {
+      const autoApprovable = (await gatekeeper.getAutoApprovableActions()).map(kind => kind.tag);
+      expect(autoApprovable).not.toContain(tag);
+
+      const calls = stubFetch();
+      const session = await startSession();
+      const message = await firstMessage(session);
+
+      await call(message);
+
+      expect(approvals.actions).toHaveLength(1);
+      expect(approvals.actions[0].description).toMatchObject({
+        awaitDecision: true,
+        actionKind: { tag },
+      });
+      expect(wrote(calls)).toBe(false);
+
+      await applyApprovedAction(approvals.actions[0].id);
+
+      expect(wrote(calls)).toBe(true);
+    });
+  }
+});
+
+// Drafts are the boundary: a human sends from Outlook. The gatekeeper has no send path to gate.
+describe("no send path", () => {
+  // Graph sends mail through `/me/sendMail` or a draft's `/send` action. `#send` in graph-api.ts is
+  // only the client's HTTP-write helper (PATCH, move, createReply), so a quoted or slashed `send`
+  // path segment is what is refused here.
+  it("never names a Graph send endpoint in its source", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const srcDir = new URL("../src/", import.meta.url);
+    const sources = readdirSync(srcDir, { recursive: true, encoding: "utf8" })
+      .filter(name => /\.(ts|tsx|txt)$/.test(name))
+      .map(name => [name, readFileSync(new URL(name, srcDir), "utf8")] as const);
+    expect(sources.length).toBeGreaterThan(0);
+    for (const [name, source] of sources) {
+      expect(source, name).not.toMatch(/sendMail|["'\/]send["'\/?]|\/send\b/i);
+    }
+  });
+});
+
 describe("credential death", () => {
   it("reports a claims-challenge 401 to the account", async () => {
     stubFetch(() => jsonResponse({ error: { code: "InvalidAuthenticationToken" } }, 401, {
