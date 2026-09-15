@@ -13,6 +13,8 @@ import { isReservedBlueprintKey, readBlueprintKvRecord } from "./blueprint-archi
 import { filterEnabledResources, isResourceDisabled, readAdminConfig } from "./admin-config.js";
 import { buildGatekeeperVendorMap } from "./auth/auth-vendors.js";
 import { handoffTargetOrigin, hashSecret, newSecretToken, PENDING_HANDOFF_LIFETIME_MS } from "./connect-handoff.js";
+import { putUserAvatar, userAvatarExists, validateAvatarBytes } from "./avatar.js";
+import { describeSeeded, fetchConnectProfileHints, sanitizeDisplayNameHint } from "./profile-hints.js";
 
 const logger = createWorkshopLogger("workshop.user");
 
@@ -1812,6 +1814,7 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
         event: "account.connect.completed", vendorId: record.connect.vendorId,
         accountId: record.accountId,
       });
+      await this.#applyConnectProfileHints(record.connect.vendorId, record.connect.account);
     } else {
       let account = this.storage.connectedAccounts.get(record.accountId);
       if (!account) throw new Error("No such account.");
@@ -1824,6 +1827,72 @@ export class UserDurableObject extends DurableObject<Cloudflare.Env> {
         accountId: record.accountId,
       });
     }
+  }
+
+  // Seed this user's display name and avatar from the profile hints a just-connected gatekeeper
+  // offers (see profile-hints.ts for why this happens at connect rather than sign-in). Bounded and
+  // best-effort: the account is already connected, and nothing here may undo or fail that.
+  async #applyConnectProfileHints(vendorId: string, account: Fetcher<GatekeeperUser>): Promise<void> {
+    try {
+      let vendor = this.vendors.get(vendorId);
+      if (!vendor) return;
+      let {hints, outcome} = await fetchConnectProfileHints(vendor, account);
+      if (outcome === "unsupported") return;
+      if (outcome !== "ok") {
+        logger.warn("connect profile hints unavailable", {
+          event: `account.connect.profile.${outcome}`, vendorId,
+        });
+        return;
+      }
+      let seeded = await this.seedProfileFromHints(hints);
+      logger.info("connect profile hints applied", {
+        event: "account.connect.profile", vendorId, profileSeeded: describeSeeded(seeded),
+      });
+    } catch (err) {
+      logger.warn("connect profile hints not applied", {
+        event: "account.connect.profile.failed", vendorId, error: err,
+      });
+    }
+  }
+
+  /**
+   * Apply profile hints a connected gatekeeper offered. Never an identity change: the profile id is
+   * untouched. The display name is replaced only while it is still the email local-part this
+   * Workshop seeded (Access or gatekeeper sign-in), so a name the user chose is never clobbered; an
+   * avatar is written only when none is stored, and only as a valid JPEG or PNG. Returns what was
+   * applied. Takes `unknown` because the hints come from another worker.
+   */
+  async seedProfileFromHints(hints: unknown): Promise<{nameSeeded: boolean, photoSeeded: boolean}> {
+    let seeded = {nameSeeded: false, photoSeeded: false};
+    if (!this.storage.created.get() || hints === null || typeof hints !== "object") return seeded;
+    let {name, photo} = hints as {name?: unknown, photo?: unknown};
+
+    let profile = this.storage.profile.get();
+    let nameHint = sanitizeDisplayNameHint(name);
+    // Only an email-shaped id carries a name this Workshop seeded; a password account's display
+    // name was typed by its owner at signup.
+    let seedName = profile.id.includes("@") ? profile.id.split("@")[0] : null;
+    if (nameHint !== null && seedName !== null && profile.name === seedName && nameHint !== seedName) {
+      profile.name = nameHint;
+      this.storage.profile.put(profile);
+      seeded.nameSeeded = true;
+    }
+
+    let data = (photo as {data?: unknown} | null | undefined)?.data;
+    if (data instanceof Uint8Array) {
+      try {
+        if (!(await userAvatarExists(this.env, profile.id))) {
+          validateAvatarBytes(data);
+          await putUserAvatar(this.env, profile.id, data);
+          seeded.photoSeeded = true;
+        }
+      } catch (err) {
+        logger.warn("connect profile photo not seeded", {
+          event: "account.connect.profile.photo.failed", error: err,
+        });
+      }
+    }
+    return seeded;
   }
 
   // Drop a pending handoff that will never activate. A staged connect holds a victim's (or just an

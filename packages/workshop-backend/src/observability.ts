@@ -28,6 +28,7 @@ export type WorkshopObservabilityFields = {
   operation: string;
   outcome: "ok" | "error" | "usage_limit" | "callbacks_stalled" | "no_email" | "signups_disabled";
   path: string;
+  profileSeeded: "name+photo" | "name" | "photo" | "none";
   recordedType: string;
   resourceTitle: string;
   sequence: number;
