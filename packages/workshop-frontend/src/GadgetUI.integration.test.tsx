@@ -188,6 +188,25 @@ describe('GadgetUI RPC recovery', () => {
     )
   })
 
+  it('passes exact bundle context into the sandbox and leaves older servers explicitly unknown', async () => {
+    const gadget = fakeGadget('context', 'document.body.textContent = "context"')
+    const context = {
+      schema: 'cfos.gadget-ui-context.v1' as const,
+      workspaceId: 'a'.repeat(64), gadgetId: 0, chatId: 0,
+      view: 'chat_preview' as const, clientCodeSha256: 'a'.repeat(64),
+    }
+    gadget.getUiBundle.mockResolvedValue({ jsCode: 'void 0;', context })
+    await act(async () => { root.render(<GadgetUI gadget={gadget.stub} height="100px" chatId={0} />) })
+    await vi.waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+    const html = decodeURIComponent(container.querySelector('iframe')!.srcdoc)
+    expect(html).toContain(`Object.freeze(${JSON.stringify(context)})`)
+    expect(html).toContain('"CFOS_CONTEXT"')
+    expect(html).toContain('writable: false, configurable: false')
+    const old = fakeGadget('old', 'void 0;')
+    await act(async () => { root.render(<GadgetUI gadget={old.stub} height="100px" chatId={1} />) })
+    await vi.waitFor(() => expect(decodeURIComponent(container.querySelector('iframe')?.srcdoc ?? '')).toContain('Object.freeze(null)'))
+  })
+
   it('keeps the iframe while redirecting calls to the replacement gadget client', async () => {
     const first = fakeGadget('first', 'document.body.textContent = "first"')
     await act(async () => {

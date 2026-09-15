@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Text, Loader, Banner } from '@cloudflare/kumo'
 import { Sparkle } from '@phosphor-icons/react'
 import { RpcStub, RpcTarget, newMessagePortRpcSession } from 'capnweb'
-import { GadgetClient, ConsoleLogEvent } from '@gadgets/workshop-shared/api'
+import { GadgetClient, ConsoleLogEvent, GadgetUiContext } from '@gadgets/workshop-shared/api'
 
 // We want to inject Cap'n Web into the Gadget. Luckily it has no dependencies, so we can just take
 // the whole module and embed it. We can import the module using ?raw to get a string of the
@@ -102,7 +102,9 @@ window.addEventListener('unhandledrejection', (event) => {
 
 `);
 
-const createSandboxedHtml = (jsCode: string): string => {
+const createSandboxedHtml = (jsCode: string, context?: GadgetUiContext): string => {
+  // The context travels with these code bytes. No parent URL, query, credential or user data.
+  const contextCode = `Object.defineProperty(globalThis, "CFOS_CONTEXT", { value: Object.freeze(${JSON.stringify(context ?? null)}), writable: false, configurable: false });\n`
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -110,7 +112,7 @@ const createSandboxedHtml = (jsCode: string): string => {
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src 'none'; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data:; media-src data:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none';">
 </head>
 <body>
-    <script type="module" src="data:text/javascript;charset=utf-8,${INJECTED_CODE_PREFIX}${encodeURIComponent(jsCode)}"></script>
+    <script type="module" src="data:text/javascript;charset=utf-8,${INJECTED_CODE_PREFIX}${encodeURIComponent(contextCode + jsCode)}"></script>
 </body>
 </html>`.trim()
 }
@@ -294,7 +296,7 @@ function GadgetUISession({ gadget, height, reloadTrigger, isVisible = true, chat
         const bundle = await gadget.getUiBundle(chatId)
         if (!isCurrent()) return
         if (bundle) {
-          const html = createSandboxedHtml(bundle.jsCode)
+          const html = createSandboxedHtml(bundle.jsCode, bundle.context)
           setSandboxedHtml(html)
         } else {
           setSandboxedHtml(null)

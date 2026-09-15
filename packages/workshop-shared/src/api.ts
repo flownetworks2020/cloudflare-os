@@ -1480,6 +1480,16 @@ export type OutputSummary = {
  * sandbox with no access to the outside world except through an RPC interface to the Workshop
  * and to the Gadget's server.
  */
+/** Diagnostic origin of the exact client code in a UI bundle, never an authorization grant. */
+export type GadgetUiContext = {
+  schema: "cfos.gadget-ui-context.v1";
+  workspaceId: string;
+  gadgetId: WorkpieceId;
+  chatId: number | null;
+  view: "saved" | "chat_preview";
+  clientCodeSha256: string;
+};
+
 export type UiBundle = {
   // URL from which the main bundle of UI code can be downloaded. This download contains all the
   // Gadget's client-side assets. The URL is content-addressed to make it highly cacheable, even
@@ -1497,6 +1507,8 @@ export type UiBundle = {
    *   Cache API in the browser? Or some other local storage?
    */
   jsCode: string;
+  /** Absent on older servers. Describes this bundle, not the latest server head. */
+  context?: GadgetUiContext;
 
   // Other metadata could be placed here in the future, e.g. to specify what version of support
   // libraries should be loaded.
