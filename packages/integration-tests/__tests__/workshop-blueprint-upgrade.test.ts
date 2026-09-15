@@ -157,3 +157,42 @@ export class Gadget extends DurableObject {
   expect(customRefusal.history.some(entry => entry.type === "changes")).toBe(false);
   expect((await onlyGadget(customized)).commitId).toBe(customHead.commitId);
 });
+
+
+it("binds UI context to saved or preview bytes without changing the saved head", async () => {
+  using api = connect(harness.url);
+  const username = nextUsernames("uicontext")[0];
+  if (!username) throw new Error("No test identity");
+  using user = await signUp(api, username);
+  await user.setQuickModel(null);
+  await user.completeOnboarding();
+  using workspace = await user.newGadget();
+  using _created = await workspace.createGadget("Context fixture", undefined, "APP");
+  await edit(workspace, [["client.js", {set: 'document.body.textContent = "saved";'}]]);
+  const original = await onlyGadget(workspace);
+  using gadget = await workspace.getGadget(original.id);
+  const saved = await gadget.getUiBundle();
+  expect(saved?.context).toMatchObject({
+    schema: "cfos.gadget-ui-context.v1", gadgetId: original.id, chatId: null, view: "saved",
+  });
+  expect(saved?.context?.workspaceId).toMatch(/^[a-f0-9]{64}$/);
+  const hash = async (text: string) => Array.from(new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)),
+  ), byte => byte.toString(16).padStart(2, "0")).join("");
+  expect(saved?.context?.clientCodeSha256).toBe(await hash(saved!.jsCode));
+  const chat = await workspace.newChat("Unaccepted diagnostic preview", null);
+  await workspace.submitCodeChange(chat, {
+    generation: 0, revision: 0, clientId: crypto.randomUUID(), seq: 1,
+    pins: [{gadgetId: original.id, baseCommit: original.commitId}],
+    change: {[original.id]: [["client.js", {set: 'document.body.textContent = "preview";'}]]},
+  });
+  const preview = await gadget.getUiBundle(chat);
+  expect(preview?.context).toMatchObject({
+    workspaceId: saved?.context?.workspaceId, gadgetId: original.id, chatId: chat, view: "chat_preview",
+  });
+  expect(preview?.jsCode).toContain('"preview"');
+  expect(preview?.context?.clientCodeSha256).toBe(await hash(preview!.jsCode));
+  expect(preview?.context?.clientCodeSha256).not.toBe(saved?.context?.clientCodeSha256);
+  expect((await onlyGadget(workspace)).commitId).toBe(original.commitId);
+  expect(await gadget.getUiBundle()).toEqual(saved);
+});

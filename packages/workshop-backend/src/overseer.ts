@@ -5182,7 +5182,16 @@ class OverseerImpl implements AgentHooks {
     // TODO: Bundle the UI? For now we just return client.js.
     this.checkChatExistsAndMaterializeChanges(chatId);
     let jsCode = (await this.readGadgetFiles(gadgetId, chatId)).get("client.js");
-    return jsCode !== undefined ? {jsCode} : null;
+    if (jsCode === undefined) return null;
+    // Hash the captured bytes, not a head reread after an asynchronous build.
+    let digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(jsCode));
+    let clientCodeSha256 = Array.from(new Uint8Array(digest), byte =>
+      byte.toString(16).padStart(2, "0")).join("");
+    return {jsCode, context: {
+      schema: "cfos.gadget-ui-context.v1",
+      workspaceId: this.ctx.id.toString(), gadgetId, chatId: chatId ?? null,
+      view: chatId === undefined ? "saved" : "chat_preview", clientCodeSha256,
+    }};
   }
 
   async getGadgetExportFormats(gadgetId: WorkpieceId, chatId?: number)
