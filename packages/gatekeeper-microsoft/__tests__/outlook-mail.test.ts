@@ -632,7 +632,7 @@ describe("no send path", () => {
       .map(name => [name, readFileSync(new URL(name, srcDir), "utf8")] as const);
     expect(sources.length).toBeGreaterThan(0);
     for (const [name, source] of sources) {
-      expect(source, name).not.toMatch(/sendMail|["'\/]send["'\/?]|\/send\b/i);
+      expect(source, name).not.toMatch(/sendMail|["'/]send["'/?]|\/send\b/i);
     }
   });
 });
