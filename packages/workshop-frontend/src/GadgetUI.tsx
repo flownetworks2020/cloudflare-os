@@ -1,3 +1,4 @@
+import { JSON_DOWNLOAD_CLIENT, validateJsonDownload, downloadJson } from './features/gadget-download/jsonDownload'
 import { useState, useEffect, useRef } from 'react'
 import { Text, Loader, Banner } from '@cloudflare/kumo'
 import { Sparkle } from '@phosphor-icons/react'
@@ -124,7 +125,7 @@ const createSandboxedHtml = (jsCode: string, context?: GadgetUiContext): string 
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src 'none'; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data:; media-src data:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none';">
 </head>
 <body>
-    <script type="module" src="data:text/javascript;charset=utf-8,${INJECTED_CODE_PREFIX}${encodeURIComponent(contextCode + navigationCode + jsCode)}"></script>
+    <script type="module" src="data:text/javascript;charset=utf-8,${INJECTED_CODE_PREFIX}${encodeURIComponent(contextCode + navigationCode + JSON_DOWNLOAD_CLIENT + jsCode)}"></script>
 </body>
 </html>`.trim()
 }
@@ -402,6 +403,19 @@ function GadgetUISession({ gadget, height, reloadTrigger, isVisible = true, chat
         } finally {
           if (handshakePendingRef.current === generation) handshakePendingRef.current = null
         }
+      } else if (event.data?.type === 'cfos-download-json' && event.ports?.[0]) {
+        const reply = event.ports[0]
+        try {
+          const request = validateJsonDownload(event.data, navigator.userActivation?.isActive === true)
+          downloadJson(request)
+          // MessagePort is point-to-point and has no targetOrigin argument.
+          // eslint-disable-next-line unicorn/require-post-message-target-origin
+          reply.postMessage({ ok: true })
+        } catch (downloadError) {
+          // MessagePort is bound to the already-validated iframe sender.
+          // eslint-disable-next-line unicorn/require-post-message-target-origin
+          reply.postMessage({ ok: false, error: downloadError instanceof Error ? downloadError.message : 'Export could not start.' })
+        } finally { reply.close() }
       } else if (event.data?.type === 'cfos-ui-state' && navigationKeyRef.current && event.data.key === navigationKeyRef.current) {
         saveNavigationState(navigationKeyRef.current, event.data.state, event.data.replace === true)
       } else if (event.data?.type === 'console' && onConsoleLogRef.current) {

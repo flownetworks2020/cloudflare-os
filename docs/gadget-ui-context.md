@@ -17,3 +17,18 @@ Use this only for navigation and non-secret UI preferences—not form submission
 A view slug (`[a-z][a-z0-9-]{0,31}`) becomes the scoped `gadgetView` search parameter, preserving the rest of the host URL. Other control state stays out of the URL. Call `save` with `replace = true` for typing, and false for deliberate view/page transitions. Back/Forward restores the historical entry through the callback. Reload uses that entry or the tab-local state; an explicit scoped view URL takes precedence over the stored view. The API grants no navigation outside the current host page and no direct browser-storage access to the sandbox.
 
 Verified locally with the actual GadgetUI component and compiled Workroom v15: selecting Estate updates the host URL and survives reload; returning from Work to Attention with Back restores its search text. Provider RPCs in this verification used an explicit local fixture. Full deployed-workspace verification remains required.
+
+## JSON exports from a sandboxed gadget
+
+`CFOS_DOWNLOAD.json(filename, value)` asks the trusted host to initiate a JSON
+file download. Call it directly from an Export button's click handler and await
+the returned promise. The host checks the current iframe window and opaque
+origin, requires active browser user activation, accepts a plain `.json` filename,
+and rejects invalid JSON or content over 2 MB (UTF-8). No URL is fetched and the
+iframe sandbox retains its existing restrictions. A resolved promise means the
+browser download was initiated, not that the user saved a file to disk. A missing
+API or rejected promise must produce visible feedback rather than a silent button.
+
+The host's source check also prevents another gadget from borrowing this frame's
+export path. Metadata is not added by the download API: the caller must export its
+recorded context, including unavailable fields, without inventing provenance.
