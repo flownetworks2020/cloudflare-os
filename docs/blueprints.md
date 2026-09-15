@@ -184,7 +184,8 @@ To support blueprint metadata derivation, each gatekeeper stores a `GatekeeperCr
 
 Publishing a blueprint does not change gadgets previously created from it. A native Workshop
 agent can use `upgradeGadget` to compare an installed gadget with two exact published versions.
-The first call omits `reviewToken` and returns source hashes, added/modified/removed filenames,
+Each call must name `workpiece` using its existing env binding name (for example `GADGET`,
+as listed in the agent system context). The first call omits `reviewToken` and returns source hashes, added/modified/removed filenames,
 and any local customizations relative to the stated base version. Archives must still be
 available; the tool never substitutes a different version or generates replacement source.
 
