@@ -16,7 +16,7 @@ Publishing a new blueprint leaves existing gadgets on their old code. Add a nati
 - Backend build and frontend build passed.
 - Backend suite: 840 tests passed; integration suite: 3 passed, 4 skipped.
 - Focused upgrade and real durable change-review tests: 50 passed.
-- Lint for all changed files passed. Workspace lint has two existing errors in user-model-resolution.test.ts and homePromptFlow.test.ts.
+- Repaired two inherited test-only lint errors: an unused import and an untyped mock. Workspace lint passed. The two affected test files passed (2 tests each); frontend jsdom verification used NODE_OPTIONS=--no-experimental-webstorage to avoid Node 26 shadowing its localStorage.
 
 ## Notes
 

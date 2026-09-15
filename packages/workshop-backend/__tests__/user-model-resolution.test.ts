@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AiChatAuthorInfo, AiModelConfig } from "@gadgets/workshop-shared/api";
+import type { AiModelConfig } from "@gadgets/workshop-shared/api";
 import { UserDurableObject } from "../src/user.js";
 
 const MODEL_ID = "claude-sonnet-5";
