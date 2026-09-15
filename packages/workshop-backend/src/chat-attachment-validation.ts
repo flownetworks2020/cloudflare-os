@@ -4,7 +4,7 @@ import { PDF_MIME_TYPE } from "./chat-attachment-pdf";
 import { convertDocumentToMarkdown } from "./doc-to-markdown";
 import type { DocToMarkdownEnv } from "./doc-to-markdown";
 
-// Bounds attachment storage and the bytes replayed into model requests.
+/** Bounds attachment storage and the bytes replayed into model requests. */
 export const MAX_CHAT_ATTACHMENT_BYTES = 1024 * 1024;
 
 /**

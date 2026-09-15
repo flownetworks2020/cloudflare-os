@@ -2,7 +2,7 @@ import { formatAttachmentSize } from "../../attachmentFormatting";
 
 export const MAX_CHAT_ATTACHMENT_BYTES = 1024 * 1024;
 export const MAX_CHAT_ATTACHMENT_TOTAL_BYTES = 5 * 1024 * 1024;
-// Must match MAX_CONVERTIBLE_DOCUMENT_BYTES in the backend's chat-attachment-validation.ts.
+/** Must match MAX_CONVERTIBLE_DOCUMENT_BYTES in the backend's chat-attachment-validation.ts. */
 export const MAX_CONVERTIBLE_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
 // Documents the server may convert to Markdown instead of storing as-is. They are allowed to be
