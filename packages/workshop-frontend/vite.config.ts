@@ -1,8 +1,12 @@
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
+import { lingui } from '@lingui/vite-plugin'
+import { getConfig as getLinguiConfig } from '@lingui/conf'
 import { vitestTask } from '@gadgets/scripts/vitest-task'
 
 // `dist/` is this package's own build output, excluded from the inputs of the bundle and test
@@ -26,6 +30,9 @@ const frontendBundleTaskOptions = {
 const ownDist = { pattern: '!dist/**', base: 'package' } as const
 const viteBuildCommand =
   `node --input-type=module -e "process.env.NODE_ENV='production'; await (await import('vite')).build()"`
+
+const linguiConfigCwd = resolve(dirname(fileURLToPath(import.meta.url)), '../i18n')
+const linguiConfig = getLinguiConfig({ cwd: linguiConfigCwd })
 
 const runConfig = {
   run: {
@@ -72,7 +79,14 @@ export default defineConfig(({ mode }) => {
     ...runConfig,
     plugins: [
       TanStackRouterVite({ target: 'react', autoCodeSplitting: true }),
-      react(),
+      react({
+        babel: {
+          plugins: [
+            ['@lingui/babel-plugin-lingui-macro', { descriptorFields: 'message', linguiConfig }],
+          ],
+        },
+      }),
+      lingui({ cwd: linguiConfigCwd }),
       tailwindcss(),
       tsconfigPaths(),
     ],

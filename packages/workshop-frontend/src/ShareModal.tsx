@@ -14,6 +14,8 @@ import {
   CollaboratorRole,
   ObserverBindingNeed,
 } from '@gadgets/workshop-shared/api'
+import { t } from '@lingui/core/macro'
+import { Trans } from '@lingui/react/macro'
 import { WorkshopButton, WorkshopIconButton } from './components/WorkshopControls'
 import { PersonAvatar } from './components/PersonAvatar'
 import { copyToClipboard } from './clipboard'
@@ -171,7 +173,7 @@ function InlineConfirm({
         type="button"
         onClick={onCancel}
         disabled={busy}
-        aria-label="Cancel"
+        aria-label={t`Cancel`}
         className="grid h-7 w-7 cursor-pointer place-items-center rounded-lg text-kumo-inactive transition-[background-color,color,transform] duration-150 ease-out hover:bg-kumo-tint hover:text-kumo-default active:scale-[0.96] disabled:opacity-60"
       >
         <X size={14} />
@@ -241,7 +243,7 @@ function RecipientVerification({
   if (failed) {
     body = (
       <p className="px-1 text-[12px] leading-[16px] tracking-[-0.15px] text-kumo-subtle">
-        Couldn’t check which connections recipients will be asked to verify.
+        <Trans>Couldn’t check which connections recipients will be asked to verify.</Trans>
       </p>
     )
   } else if (requirements === null || requirements.length === 0) {
@@ -463,7 +465,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
         requirements={null}
         failed
         headingId="recipient-verification-heading"
-        heading="Recipient verification"
+        heading={t`Recipient verification`}
       />
     )
   } else if (requirements !== null) {
@@ -475,7 +477,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
           failed={false}
           role={addRole}
           headingId="recipient-verification-heading"
-          heading="Recipient verification"
+          heading={t`Recipient verification`}
         />
       )
     } else {
@@ -487,7 +489,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
             failed={false}
             role={addRole === newLinkRole ? addRole : undefined}
             headingId="recipient-verification-heading"
-            heading="Recipient verification"
+            heading={t`Recipient verification`}
           />
         )
       } else {
@@ -498,14 +500,14 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
               failed={false}
               role={addRole}
               headingId="invite-verification-heading"
-              heading="Direct invite verification"
+              heading={t`Direct invite verification`}
             />
             <RecipientVerification
               requirements={linkRequirements}
               failed={false}
               role={newLinkRole}
               headingId="link-verification-heading"
-              heading="Share-link verification"
+              heading={t`Share-link verification`}
             />
           </>
         )
@@ -759,12 +761,12 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
               Share “{metadata.title}”
             </Dialog.Title>
             <Dialog.Description className="mt-1 text-[13px] leading-[18px] tracking-[-0.25px] text-kumo-subtle">
-              Invite people or share a link.
+              <Trans>Invite people or share a link.</Trans>
             </Dialog.Description>
           </div>
           <Dialog.Close
             render={(props) => (
-              <WorkshopIconButton {...props} aria-label="Close">
+              <WorkshopIconButton {...props} aria-label={t`Close`}>
                 <X size={18} />
               </WorkshopIconButton>
             )}
@@ -781,13 +783,13 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                 <ShieldWarning size={22} weight="duotone" />
               </div>
               <p className="mt-3 text-[14px] leading-5 font-medium tracking-[-0.3px] text-kumo-default">
-                This workspace can’t be shared
+                <Trans>This workspace can’t be shared</Trans>
               </p>
               <p className="mt-1.5 max-w-[320px] text-balance text-[12px] leading-[18px] tracking-[-0.1px] text-kumo-subtle">
-                It has observed sensitive data that can only be accessed by you, the owner.
+                <Trans>It has observed sensitive data that can only be accessed by you, the owner.</Trans>
               </p>
               <p className="mt-2 max-w-[320px] text-balance text-[12px] leading-[18px] tracking-[-0.1px] text-kumo-subtle">
-                To share something similar, create a blueprint from a gadget in this workspace, then use it to create a new workspace.
+                <Trans>To share something similar, create a blueprint from a gadget in this workspace, then use it to create a new workspace.</Trans>
               </p>
             </div>
           ) : (
@@ -805,8 +807,8 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
             </div>
             <input
               type="search"
-              placeholder="Username or email"
-              aria-label="Username or email"
+              placeholder={t`Username or email`}
+              aria-label={t`Username or email`}
               value={addUsername}
               onChange={(e) => setAddUsername(e.target.value)}
               onKeyDown={(e) => { if (!isImeComposing(e) && e.key === 'Enter') handleAddCollaborator() }}
@@ -824,7 +826,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
               disabled={sharingProhibited}
             />
             <RoleMenu
-              ariaLabel="Access to grant"
+              ariaLabel={t`Access to grant`}
               value={addRole}
               onValueChange={setAddRole}
               disabled={sharingProhibited}
@@ -836,7 +838,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
               onClick={handleAddCollaborator}
               disabled={!addUsername.trim() || adding || sharingProhibited}
             >
-              {adding ? 'Inviting…' : 'Invite'}
+              {adding ? t`Inviting…` : t`Invite`}
             </WorkshopButton>
           </div>
 
@@ -851,17 +853,17 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                     Added {invitedName}
                   </p>
                   <span className="text-[11px] leading-4 text-kumo-inactive">
-                    {invitedLinkCopied ? 'Link copied to your clipboard' : 'Send them this link to open it'}
+                    {invitedLinkCopied ? t`Link copied to your clipboard` : t`Send them this link to open it`}
                   </span>
                 </div>
                 <p className="truncate font-mono text-[11px] leading-4 text-kumo-subtle">{workspaceUrl}</p>
               </div>
               <WorkshopButton tone="primary" onClick={copyWorkspaceUrl} className="gap-1.5 !rounded-xl">
                 {invitedLinkCopied ? <Check size={13} weight="bold" /> : <Copy size={13} />}
-                {invitedLinkCopied ? 'Copied' : 'Copy link'}
+                {invitedLinkCopied ? t`Copied` : t`Copy link`}
               </WorkshopButton>
               <WorkshopIconButton
-                aria-label="Dismiss added collaborator"
+                aria-label={t`Dismiss added collaborator`}
                 onClick={() => { setInvitedName(null); setInvitedLinkCopied(false) }}
               >
                 <X size={14} />
@@ -879,20 +881,20 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                     <div className="min-w-[160px] flex-1">
                       <div className="flex items-baseline gap-1.5">
                         <p className="text-[13px] leading-[18px] font-medium text-kumo-default">
-                          {newShareLinkCopied ? 'Link copied' : 'Link ready'}
+                          {newShareLinkCopied ? t`Link copied` : t`Link ready`}
                         </p>
                         <span className="text-[11px] leading-4 text-kumo-inactive">
-                          You can copy it again anytime from Share links
+                          <Trans>You can copy it again anytime from Share links</Trans>
                         </span>
                       </div>
                       <p className="truncate font-mono text-[11px] leading-4 text-kumo-subtle">{newShareLink}</p>
                     </div>
                     <WorkshopButton tone="primary" onClick={copyNewLink} className="w-[78px] gap-1.5 !rounded-xl">
                       {newShareLinkCopied ? <Check size={13} weight="bold" /> : <Copy size={13} />}
-                      {newShareLinkCopied ? 'Copied' : 'Copy'}
+                      {newShareLinkCopied ? t`Copied` : t`Copy`}
                     </WorkshopButton>
                     <WorkshopIconButton
-                      aria-label="Dismiss created link"
+                      aria-label={t`Dismiss created link`}
                       onClick={() => { setNewShareLink(null); setNewShareLinkId(null); setNewShareLinkCopied(false); setShowLinkComposer(false) }}
                     >
                       <X size={14} />
@@ -908,22 +910,22 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                       value={newLinkNote}
                       onChange={(e) => setNewLinkNote(e.target.value)}
                       onKeyDown={(e) => { if (!isImeComposing(e) && e.key === 'Enter') handleCreateShareLink() }}
-                      placeholder="Name this link (optional)…"
-                      aria-label="Share link name (optional)"
+                      placeholder={t`Name this link (optional)…`}
+                      aria-label={t`Share link name (optional)`}
                       className="h-9 min-w-0 flex-1 border-0 bg-transparent p-0 text-[14px] leading-5 tracking-[-0.25px] text-kumo-default outline-none placeholder:text-kumo-inactive"
                       disabled={creatingLink || sharingProhibited}
                     />
                     <RoleMenu
-                      ariaLabel="Access granted by link"
+                      ariaLabel={t`Access granted by link`}
                       value={newLinkRole}
                       onValueChange={setNewLinkRole}
                       disabled={creatingLink || sharingProhibited}
                       container={menuContainer}
                     />
                     <WorkshopButton tone="primary" className="shrink-0 !rounded-xl" onClick={handleCreateShareLink} disabled={creatingLink || sharingProhibited}>
-                      {creatingLink ? 'Creating…' : 'Create link'}
+                      {creatingLink ? t`Creating…` : t`Create link`}
                     </WorkshopButton>
-                    <WorkshopIconButton aria-label="Cancel creating link" onClick={() => setShowLinkComposer(false)}>
+                    <WorkshopIconButton aria-label={t`Cancel creating link`} onClick={() => setShowLinkComposer(false)}>
                       <X size={14} />
                     </WorkshopIconButton>
                 </div>
@@ -935,7 +937,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                 disabled={sharingProhibited}
                 className="themed-compact-shadow flex h-12 w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border border-kumo-line/80 bg-kumo-base px-3 text-[13px] font-medium text-kumo-subtle transition-[background-color,color,transform] duration-150 ease-out hover:bg-kumo-elevated/60 hover:text-kumo-default active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Link size={14} /> Create a share link
+                <Link size={14} /> <Trans>Create a share link</Trans>
               </button>
             )}
           </div>
@@ -946,7 +948,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
           <section aria-labelledby="people-heading" className="mt-4">
             <div className="mb-2 px-1">
               <h3 id="people-heading" className="text-[12px] leading-4 font-medium tracking-[-0.15px] text-kumo-subtle">
-                People with access
+                <Trans>People with access</Trans>
               </h3>
             </div>
             <div className="overflow-hidden rounded-2xl border border-kumo-line/80 bg-kumo-base">
@@ -970,10 +972,10 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                         </p>
                       </div>
                       {row.kind === 'owner' ? (
-                        <span className="px-2 text-[12px] text-kumo-subtle">Owner</span>
+                        <span className="px-2 text-[12px] text-kumo-subtle"><Trans>Owner</Trans></span>
                       ) : isRemoving ? (
                         <InlineConfirm
-                          label="Remove"
+                          label={t`Remove`}
                           busy={removeTarget.previewing || confirmationBusy}
                           busyLabel={removeTarget.previewing ? 'Checking…' : undefined}
                           onConfirm={handleConfirmRemoveCollaborator}
@@ -986,7 +988,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                             danger
                             className="!h-7 !w-7 opacity-35 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                             onClick={() => handleStartRemoveCollaborator(row.info.profile.id)}
-                            aria-label={`Remove ${profile.name}`}
+                            aria-label={t`Remove ${profile.name}`}
                             disabled={confirmationBusy}
                           >
                             <Trash size={13} />
@@ -1020,7 +1022,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
           <section aria-labelledby="links-heading" className="mt-4">
             <div className="mb-2 px-1">
               <h3 id="links-heading" className="text-[12px] leading-4 font-medium tracking-[-0.15px] text-kumo-subtle">
-                Share links
+                <Trans>Share links</Trans>
               </h3>
             </div>
 
@@ -1045,19 +1047,19 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                                 if (e.key === 'Enter') handleSaveShareLinkNote()
                                 if (e.key === 'Escape') cancelRenameShareLink()
                               }}
-                              placeholder="Name this link…"
-                              aria-label="Share link name"
+                              placeholder={t`Name this link…`}
+                              aria-label={t`Share link name`}
                               className="block w-full border-0 bg-transparent p-0 text-[13px] leading-[17px] font-medium tracking-[-0.25px] text-kumo-default outline-none shadow-[inset_0_-1px_0_0_var(--color-kumo-line)] transition-shadow placeholder:font-normal placeholder:text-kumo-inactive focus:shadow-[inset_0_-1px_0_0_var(--color-kumo-fill)]"
                               disabled={savingShareLinkNote}
                             />
                           ) : (
-                            <p className="truncate text-[13px] leading-[17px] font-medium tracking-[-0.25px] text-kumo-default">{sk.note || 'Untitled link'}</p>
+                            <p className="truncate text-[13px] leading-[17px] font-medium tracking-[-0.25px] text-kumo-default">{sk.note || t`Untitled link`}</p>
                           )}
                           <p className="truncate text-[12px] leading-[15px] tracking-[-0.15px] text-kumo-subtle">Created by {sk.createdBy.name} · {formatRelativeTime(sk.created)}</p>
                         </div>
                         {isRenaming ? (
                           <InlineConfirm
-                            label="Save"
+                            label={t`Save`}
                             tone="brand"
                             busy={savingShareLinkNote}
                             onConfirm={handleSaveShareLinkNote}
@@ -1065,7 +1067,7 @@ export default function ShareModal({ open, onClose, overseer, metadata, currentU
                           />
                         ) : isRevoking ? (
                           <InlineConfirm
-                            label="Revoke"
+                            label={t`Revoke`}
                             busy={revokeTarget.previewing || confirmationBusy}
                             busyLabel={revokeTarget.previewing ? 'Checking…' : undefined}
                             onConfirm={handleConfirmRevokeShareLink}

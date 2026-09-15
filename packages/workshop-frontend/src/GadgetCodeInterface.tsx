@@ -4,6 +4,8 @@ import { DownloadSimple, List } from '@phosphor-icons/react'
 import { Overseer, WorkpieceId } from '@gadgets/workshop-shared/api'
 import type { CodeChange, FileChange, TextChange } from '@gadgets/workshop-shared/code-change'
 import { RpcStub } from 'capnweb'
+import { t } from '@lingui/core/macro'
+import { Trans } from '@lingui/react/macro'
 import FileSidebar from './FileSidebar'
 import type { FileChangeStatus, FileSidebarHandle } from './FileSidebar'
 import { WorkshopButton, WorkshopIconButton } from './components/WorkshopControls'
@@ -1026,14 +1028,14 @@ export default function GadgetCodeInterface({
         style={{ height }}
       >
         <p className="m-0 text-sm text-kumo-danger">
-          Failed to load this gadget&apos;s code.
+          <Trans>Failed to load this gadget&apos;s code.</Trans>
         </p>
         <WorkshopButton
           tone="secondary"
           className="!h-8"
           onClick={() => setHeadRetryToken(token => token + 1)}
         >
-          Try again
+          <Trans>Try again</Trans>
         </WorkshopButton>
       </div>
     )
@@ -1045,7 +1047,7 @@ export default function GadgetCodeInterface({
         className="flex justify-center items-center px-6 text-center text-kumo-danger text-sm"
         style={{ height }}
       >
-        Failed to load this conversation&apos;s code changes. Try reloading the page.
+        <Trans>Failed to load this conversation&apos;s code changes. Try reloading the page.</Trans>
       </div>
     )
   }
@@ -1056,7 +1058,7 @@ export default function GadgetCodeInterface({
         className="flex justify-center items-center text-kumo-subtle"
         style={{ height }}
       >
-        Loading code files...
+        <Trans>Loading code files...</Trans>
       </div>
     )
   }
@@ -1085,14 +1087,14 @@ export default function GadgetCodeInterface({
       {hasUnsavedChanges && (
         <div className="bg-kumo-tint border-b border-kumo-line px-4 py-2 flex items-center gap-2 text-sm text-kumo-warning">
           <span className="text-base">&#9888;&#65039;</span>
-          <span>Connection issue - changes will be saved when connection is restored</span>
+          <span><Trans>Connection issue - changes will be saved when connection is restored</Trans></span>
         </div>
       )}
       <div className="relative flex min-h-0 flex-1">
         {fileDrawerOpen && (
           <button
             type="button"
-            aria-label="Close files"
+            aria-label={t`Close files`}
             onClick={() => setFileDrawerOpen(false)}
             className="absolute inset-0 z-20 bg-black/25 md:hidden"
           />
@@ -1101,7 +1103,7 @@ export default function GadgetCodeInterface({
           ref={fileDrawerRef}
           role={compactLayout ? 'dialog' : undefined}
           aria-modal={compactLayout ? true : undefined}
-          aria-label={compactLayout ? 'Files' : undefined}
+          aria-label={compactLayout ? t`Files` : undefined}
           aria-hidden={compactLayout && !fileDrawerOpen ? true : undefined}
           inert={compactLayout && !fileDrawerOpen ? true : undefined}
           tabIndex={compactLayout ? -1 : undefined}
@@ -1141,8 +1143,8 @@ export default function GadgetCodeInterface({
         >
           <div className={`${activeFile ? 'flex' : 'flex md:hidden'} h-11 shrink-0 items-center justify-between gap-2 border-b border-kumo-line bg-kumo-base px-2 md:h-9 md:px-3`}>
             <WorkshopIconButton
-              aria-label="Open files"
-              title="Files"
+              aria-label={t`Open files`}
+              title={t`Files`}
               onClick={() => setFileDrawerOpen(true)}
               ref={fileDrawerTriggerRef}
               className="!h-9 !w-9 md:!hidden"
@@ -1152,12 +1154,12 @@ export default function GadgetCodeInterface({
             <div className="min-w-0 flex-1 truncate text-[13px] leading-4 text-kumo-subtle md:text-[12px]">
               {activeFile ? (
                 <>{activeFileModeLabel} <span className="font-mono font-medium text-kumo-default">{activeFile}</span></>
-              ) : 'Files'}
+              ) : t`Files`}
             </div>
             {activeFile && (
               <WorkshopIconButton
-                aria-label={`Download ${activeFile}`}
-                title="Download file"
+                aria-label={t`Download ${activeFile}`}
+                title={t`Download file`}
                 onClick={() => handleFileDownload(activeFile)}
                 disabled={!activeFileDownloadable}
                 className="!h-9 !w-9 md:!h-6 md:!w-6"
@@ -1171,12 +1173,12 @@ export default function GadgetCodeInterface({
               <div className="flex h-full flex-col items-center justify-center bg-kumo-base px-6 text-center">
                 <div className="max-w-[360px]">
                   <p className="m-0 text-[15px] leading-[22px] font-semibold tracking-[-0.3px] text-kumo-default">
-                    No files yet
+                    <Trans>No files yet</Trans>
                   </p>
                   <p className="mt-1.5 mb-0 text-[13px] leading-[19px] tracking-[-0.25px] text-kumo-subtle">
                     {branchMode
-                      ? 'Keep building with the agent in chat and files will appear here as it works, or create one yourself.'
-                      : 'Open a conversation and build with the agent, and its accepted files will appear here.'}
+                      ? t`Keep building with the agent in chat and files will appear here as it works, or create one yourself.`
+                      : t`Open a conversation and build with the agent, and its accepted files will appear here.`}
                   </p>
                   {branchMode && (
                     <div className="mt-4 flex justify-center">
@@ -1186,7 +1188,7 @@ export default function GadgetCodeInterface({
                         tone="primary"
                         className="!h-8"
                       >
-                        New file
+                        <Trans>New file</Trans>
                       </WorkshopButton>
                     </div>
                   )}

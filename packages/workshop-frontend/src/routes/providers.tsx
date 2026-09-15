@@ -28,6 +28,8 @@ import {
   type ManagedModelEntry,
 } from '../managedAiProviders'
 import { managedAiModelId } from '@gadgets/workshop-shared/gatekeeper'
+import { t } from '@lingui/core/macro'
+import { Trans } from '@lingui/react/macro'
 
 export const Route = createFileRoute('/providers')({ component: ProvidersPage })
 
@@ -66,7 +68,7 @@ function ModelRow({
           onSetQuick()
         }
       }}
-      title={isQuick ? 'Quick model. Click to clear' : 'Click to set as quick model'}
+      title={isQuick ? t`Quick model. Click to clear` : t`Click to set as quick model`}
       className="group flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition-colors duration-150 ease-out hover:bg-kumo-tint"
     >
       {/* Neutral monogram — matches the sidebar/workspaces treatment */}
@@ -103,7 +105,7 @@ function ModelRow({
           <DropdownMenu.Trigger
             render={
               <button
-                aria-label="Provider actions"
+                aria-label={t`Provider actions`}
                 className="cursor-pointer rounded-md p-1.5 text-kumo-subtle transition-colors hover:bg-kumo-fill hover:text-kumo-default focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
               >
                 <DotsThreeVertical size={16} />
@@ -113,12 +115,12 @@ function ModelRow({
           <DropdownMenu.Content className={MENU_CONTENT}>
             <DropdownMenu.Item onClick={onSetQuick} className={MENU_ITEM}>
               <Lightning size={13} className="mr-2" weight={isQuick ? 'fill' : 'regular'} />
-              {isQuick ? 'Clear quick model' : 'Set as quick model'}
+              {isQuick ? t`Clear quick model` : t`Set as quick model`}
             </DropdownMenu.Item>
             {!isBuiltIn && (
               <DropdownMenu.Item variant="danger" onClick={onDelete} className={MENU_ITEM_DANGER}>
                 <Trash size={13} className="mr-2" />
-                Delete provider
+                <Trans>Delete provider</Trans>
               </DropdownMenu.Item>
             )}
           </DropdownMenu.Content>
@@ -143,9 +145,9 @@ function ManagedModelRow({
       onClick={onActivate}
       title={ready
         ? selectable
-          ? `Use ${entry.model.displayName} as the workspace agent`
-          : `Start a workspace with /${entry.model.command}`
-        : `Connect ${entry.vendor.displayName}`}
+          ? t`Use ${entry.model.displayName} as the workspace agent`
+          : t`Start a workspace with /${entry.model.command}`
+        : t`Connect ${entry.vendor.displayName}`}
       className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 ease-out hover:bg-kumo-tint"
     >
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-kumo-fill text-[12px] font-medium text-kumo-subtle">
@@ -157,11 +159,11 @@ function ManagedModelRow({
             {entry.model.displayName}
           </span>
           <span className="shrink-0 rounded-full bg-kumo-tint px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.4px] text-kumo-subtle">
-            {selectable ? 'workspace agent' : 'managed tool'}
+            {selectable ? t`workspace agent` : t`managed tool`}
           </span>
           <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${ready ? 'text-kumo-success' : 'text-kumo-subtle'}`}>
             {ready && <CheckCircle size={12} weight="fill" />}
-            {ready ? 'Connected' : 'Connect required'}
+            {ready ? t`Connected` : t`Connect required`}
           </span>
         </div>
         <span className="mt-0.5 block truncate font-mono text-[12px] tracking-[-0.1px] text-kumo-inactive">
@@ -321,14 +323,14 @@ function ProvidersPage() {
     <div className="mx-auto flex h-full w-full max-w-4xl flex-col px-3 sm:px-10">
       <header className="flex flex-col items-stretch gap-4 px-3 pb-3 pt-6 sm:flex-row sm:items-end sm:justify-between sm:pt-10">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-kumo-default">AI providers</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-kumo-default"><Trans>AI providers</Trans></h1>
           <p className="mt-1 text-[13px] leading-[18px] tracking-[-0.25px] text-kumo-subtle">
-            Configure chat models and discover managed AI tools available to your workspaces.
+            <Trans>Configure chat models and discover managed AI tools available to your workspaces.</Trans>
           </p>
         </div>
         <button type="button" onClick={() => setSheetOpen(true)} className={`${PRIMARY_BTN} h-11 justify-center text-[14px] sm:h-9 sm:text-[13px]`}>
           <Plus size={14} weight="bold" />
-          Add provider
+          <Trans>Add provider</Trans>
         </button>
       </header>
 
@@ -341,7 +343,7 @@ function ProvidersPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search providers…"
+              placeholder={t`Search providers…`}
               className="h-9 w-full rounded-lg border border-kumo-line bg-kumo-base pl-9 pr-4 text-[13px] tracking-[-0.25px] text-kumo-default placeholder:text-kumo-inactive transition-[border-color,box-shadow] duration-150 ease-out focus:border-kumo-ring focus:outline-none focus:ring-[3px] focus:ring-kumo-ring/15"
             />
           </div>
@@ -356,7 +358,7 @@ function ProvidersPage() {
               <Notice>
                 <Lightning size={15} className="mt-px shrink-0 text-kumo-brand" />
                 <span>
-                  <strong className="font-medium text-kumo-default">AI Gateway mode:</strong> built-in
+                  <strong className="font-medium text-kumo-default"><Trans>AI Gateway mode:</Trans></strong> built-in
                   models are managed by your deployment. You can still add custom models with your own
                   API tokens.
                 </span>
@@ -367,7 +369,7 @@ function ProvidersPage() {
               <Notice>
                 <Lightning size={15} className="mt-px shrink-0 text-kumo-brand" />
                 <span>
-                  <strong className="font-medium text-kumo-default">Quick model:</strong>{' '}
+                  <strong className="font-medium text-kumo-default"><Trans>Quick model:</Trans></strong>{' '}
                   {quickModel
                     ? `${apiModels.find((m) => m.id === quickModel)?.name ?? quickModel}.`
                     : 'none set.'}{' '}
@@ -380,7 +382,7 @@ function ProvidersPage() {
               <Notice>
                 <Lightning size={15} className="mt-px shrink-0 text-kumo-brand" />
                 <span>
-                  <strong className="font-medium text-kumo-default">Managed AI agents:</strong>{' '}
+                  <strong className="font-medium text-kumo-default"><Trans>Managed AI agents:</Trans></strong>{' '}
                   workspace-agent entries can be selected in the model picker and edit the current
                   gadget through the connected service. Command-only entries run explicitly. Neither
                   uses AI Gateway billing.
@@ -399,9 +401,9 @@ function ProvidersPage() {
           </div>
         ) : loadError ? (
           <div className="py-12 text-center text-sm">
-            <p className="text-kumo-danger">Something went wrong loading your providers.</p>
+            <p className="text-kumo-danger"><Trans>Something went wrong loading your providers.</Trans></p>
             <button type="button" onClick={fetchAll} className="mt-1 cursor-pointer text-kumo-brand underline">
-              Try again
+              <Trans>Try again</Trans>
             </button>
           </div>
         ) : !hasProviders ? (
@@ -410,18 +412,18 @@ function ProvidersPage() {
               <Lightning size={18} />
             </div>
             <div>
-              <p className="text-sm font-medium text-kumo-default">No AI providers yet</p>
+              <p className="text-sm font-medium text-kumo-default"><Trans>No AI providers yet</Trans></p>
               <p className="mt-1 text-[13px] leading-[18px] text-kumo-subtle">
-                Add a provider to start building workspaces with AI.
+                <Trans>Add a provider to start building workspaces with AI.</Trans>
               </p>
             </div>
             <button type="button" onClick={() => setSheetOpen(true)} className={PRIMARY_BTN}>
               <Plus size={14} weight="bold" />
-              Add your first provider
+              <Trans>Add your first provider</Trans>
             </button>
           </div>
         ) : filtered.length === 0 && filteredManaged.length === 0 ? (
-          <div className="py-12 text-center text-sm text-kumo-inactive">No providers found</div>
+          <div className="py-12 text-center text-sm text-kumo-inactive"><Trans>No providers found</Trans></div>
         ) : (
           <>
             {filtered.map((model) => (
@@ -441,7 +443,7 @@ function ProvidersPage() {
             {filteredManaged.length > 0 && (
               <div className="mt-3 border-t border-kumo-line pt-3">
                 <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.4px] text-kumo-inactive">
-                  Managed AI agents and tools
+                  <Trans>Managed AI agents and tools</Trans>
                 </p>
                 {filteredManaged.map((entry) => (
                   <ManagedModelRow

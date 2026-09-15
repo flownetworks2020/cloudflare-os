@@ -1,6 +1,8 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { Dialog, DropdownMenu, useKumoToastManager } from '@cloudflare/kumo'
 import { DotsThree, DownloadSimple, Pencil, Plus, Trash, X } from '@phosphor-icons/react'
+import { t } from '@lingui/core/macro'
+import { Trans } from '@lingui/react/macro'
 import DeleteConfirmationDialog from './components/DeleteConfirmationDialog'
 import { WorkshopButton, WorkshopIconButton, WorkshopInput } from './components/WorkshopControls'
 import { isImeComposing } from './keyboardEvent'
@@ -122,14 +124,14 @@ export default function FileSidebar({
     <div className={`flex h-full w-[244px] flex-col border-r border-kumo-line bg-kumo-base ${className}`}>
       <div className="flex h-9 shrink-0 items-center justify-between gap-2 px-3 pt-3 pb-2">
         <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-kumo-inactive">
-          Files
+          <Trans>Files</Trans>
         </span>
         <div className="flex items-center gap-1">
           <WorkshopIconButton
             onClick={() => setIsCreateModalOpen(true)}
             disabled={editLocked}
-            aria-label="New file"
-            title="New file"
+            aria-label={t`New file`}
+            title={t`New file`}
             className="!h-8 !w-8 text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default md:!h-6 md:!w-6"
           >
             <Plus size={14} weight="bold" />
@@ -137,7 +139,7 @@ export default function FileSidebar({
           {onRequestClose && (
             <WorkshopIconButton
               onClick={onRequestClose}
-              aria-label="Close files"
+              aria-label={t`Close files`}
               className="!h-8 !w-8 md:!hidden"
             >
               <X size={16} />
@@ -201,10 +203,10 @@ export default function FileSidebar({
           <div className="flex items-start justify-between gap-4 border-b border-kumo-line px-5 py-4">
             <div className="min-w-0">
               <Dialog.Title className="text-[15px] leading-5 font-medium tracking-[-0.3px] text-kumo-default">
-                New file
+                <Trans>New file</Trans>
               </Dialog.Title>
               <Dialog.Description className="mt-1 text-[12px] leading-4 font-normal tracking-[-0.2px] text-kumo-subtle">
-                Create a new file in this gadget.
+                <Trans>Create a new file in this gadget.</Trans>
               </Dialog.Description>
             </div>
             <Dialog.Close
@@ -212,7 +214,7 @@ export default function FileSidebar({
                 <WorkshopIconButton
                   {...props}
                   className="!h-7 !w-7"
-                  aria-label="Close"
+                  aria-label={t`Close`}
                 >
                   <X size={16} />
                 </WorkshopIconButton>
@@ -225,7 +227,7 @@ export default function FileSidebar({
               ref={createInputRef}
               autoFocus
               placeholder="filename.ts"
-              aria-label="Filename"
+              aria-label={t`Filename`}
               value={newFileName}
               onChange={(e) => setNewFileName(e.target.value)}
               onKeyDown={(e) => {
@@ -249,7 +251,7 @@ export default function FileSidebar({
                   {...props}
                   className="!h-9"
                 >
-                  Cancel
+                  <Trans>Cancel</Trans>
                 </WorkshopButton>
               )}
             />
@@ -258,7 +260,7 @@ export default function FileSidebar({
               onClick={handleCreateFile}
               disabled={!newFileName.trim()}
             >
-              Create file
+              <Trans>Create file</Trans>
             </WorkshopButton>
           </div>
         </Dialog>
@@ -272,7 +274,7 @@ export default function FileSidebar({
             setDeletingFile(null)
           }
         }}
-        title="Delete file?"
+        title={t`Delete file?`}
         description={<>This removes <span className="font-mono text-kumo-default">{deletingFile}</span> from the gadget. You can&apos;t undo this.</>}
         onConfirm={confirmDelete}
       />
@@ -383,7 +385,7 @@ function FileRow({
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
-          aria-label={`Rename ${filename}`}
+          aria-label={t`Rename ${filename}`}
           className="min-w-0 flex-1 bg-transparent text-[16px] leading-5 text-kumo-default outline-none placeholder:text-kumo-inactive md:text-[13px] md:leading-[18px]"
         />
       ) : (
@@ -400,8 +402,8 @@ function FileRow({
           {isStreamingActive && (
             <span
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-kumo-success"
-              aria-label={`${filename} is being edited`}
-              title="Agent is editing this file"
+              aria-label={t`${filename} is being edited`}
+              title={t`Agent is editing this file`}
             />
           )}
         </button>
@@ -412,7 +414,7 @@ function FileRow({
           <DropdownMenu.Trigger
             render={(
               <WorkshopIconButton
-                aria-label={`Actions for ${filename}`}
+                aria-label={t`Actions for ${filename}`}
                 onClick={(event) => event.stopPropagation()}
                 className="!h-8 !w-8 text-kumo-inactive opacity-100 hover:bg-kumo-tint hover:text-kumo-default focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100 md:!h-5 md:!w-5 md:opacity-0"
               >
@@ -429,7 +431,7 @@ function FileRow({
               onClick={onDownload}
               className="!h-auto rounded-md !px-2.5 !py-1.5 text-[12px] leading-4 tracking-[-0.2px] text-kumo-default transition-colors data-highlighted:bg-kumo-tint"
             >
-              Download
+              <Trans>Download</Trans>
             </DropdownMenu.Item>
             {!editLocked && (
               <>
@@ -438,7 +440,7 @@ function FileRow({
                   onClick={onRename}
                   className="!h-auto rounded-md !px-2.5 !py-1.5 text-[12px] leading-4 tracking-[-0.2px] text-kumo-default transition-colors data-highlighted:bg-kumo-tint"
                 >
-                  Rename
+                  <Trans>Rename</Trans>
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   icon={<Trash size={12} className="mr-2" />}
@@ -446,7 +448,7 @@ function FileRow({
                   onClick={onDelete}
                   className="!h-auto rounded-md !px-2.5 !py-1.5 text-[12px] leading-4 tracking-[-0.2px] transition-colors data-highlighted:bg-kumo-danger-tint"
                 >
-                  Delete
+                  <Trans>Delete</Trans>
                 </DropdownMenu.Item>
               </>
             )}

@@ -11,6 +11,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import type { FileChange, TextChange } from '@gadgets/workshop-shared/code-change'
+import { Trans } from '@lingui/react/macro'
 import { codeEditorTheme, monoFont } from './components/codeTheme'
 import { getLanguage } from './getLanguage'
 import { useTheme } from './ThemeContext'
@@ -208,7 +209,7 @@ export default function CodeEditor({
         className="flex justify-center items-center bg-kumo-base text-kumo-subtle"
         style={{ height }}
       >
-        Select a file to start editing
+        <Trans>Select a file to start editing</Trans>
       </div>
     )
   }

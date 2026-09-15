@@ -1,6 +1,8 @@
 import { DropdownMenu } from "@cloudflare/kumo";
 import { CaretDown, Check } from "@phosphor-icons/react";
 import type { AiChatAuthorInfo } from "@gadgets/workshop-shared/api";
+import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 
 type ComposerModelSelectorProps = {
   models: readonly AiChatAuthorInfo[];
@@ -24,7 +26,7 @@ export const ComposerModelSelector = ({
           <button
             type="button"
             className="group inline-flex h-10 min-w-0 max-w-[110px] cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[14px] leading-5 text-kumo-subtle transition-[background-color,color,transform] duration-150 ease-out hover:bg-kumo-tint hover:text-kumo-default focus-visible:bg-kumo-tint focus-visible:text-kumo-default focus-visible:outline-none active:scale-[0.97] data-[popup-open]:bg-kumo-tint data-[popup-open]:text-kumo-default sm:h-8 sm:max-w-[180px] sm:text-[13px]"
-            aria-label="Select model"
+            aria-label={t`Select model`}
           >
             <span className="min-w-0 truncate">{selectedModelLabel}</span>
             <CaretDown
@@ -60,7 +62,7 @@ export const ComposerModelSelector = ({
           onClick={() => onModelChange(null)}
           className="!h-auto rounded-xl !px-2 !py-1.5 text-[12px] leading-4 font-normal tracking-[-0.15px] text-kumo-subtle transition-colors data-highlighted:bg-kumo-tint/70 data-highlighted:text-kumo-default"
         >
-          <span className="min-w-0 flex-1 truncate">No agent</span>
+          <span className="min-w-0 flex-1 truncate"><Trans>No agent</Trans></span>
           {selectedModel == null && (
             <Check
               size={12}

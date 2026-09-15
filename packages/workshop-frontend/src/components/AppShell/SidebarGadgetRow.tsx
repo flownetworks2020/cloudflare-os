@@ -4,6 +4,7 @@ import { DropdownMenu } from '@cloudflare/kumo'
 import { MENU_CONTENT, MENU_ITEM, MENU_ITEM_DANGER, MENU_POSITIONER_STYLE } from '../menuStyles'
 import { useState, useEffect, useRef } from 'react'
 import type { GadgetMetadataWithTimestamps } from '@gadgets/workshop-shared/api'
+import { Trans } from '@lingui/react/macro'
 import { isImeComposing } from '../../keyboardEvent'
 
 function initials(title: string | undefined): string {
@@ -110,7 +111,7 @@ export default function SidebarGadgetRow({
                   onClick={startRename}
                   className={MENU_ITEM}
                 >
-                  <Pencil size={13} className="mr-2" /> Rename
+                  <Pencil size={13} className="mr-2" /> <Trans>Rename</Trans>
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
                   onClick={() => onTogglePin(gadget)}
@@ -123,7 +124,7 @@ export default function SidebarGadgetRow({
                   onClick={() => onShare(gadget)}
                   className={MENU_ITEM}
                 >
-                  <ShareNetwork size={13} className="mr-2" /> Share
+                  <ShareNetwork size={13} className="mr-2" /> <Trans>Share</Trans>
                 </DropdownMenu.Item>
                 <DropdownMenu.Separator />
                 <DropdownMenu.Item

@@ -30,6 +30,7 @@ import {
   BlueprintOutput,
   WorkpiecesSubscriber,
 } from '@gadgets/workshop-shared/api'
+import { Trans } from '@lingui/react/macro'
 import ObserverConfigModal from './ObserverConfigModal'
 import GadgetCodeInterface from './GadgetCodeInterface'
 import GadgetUI from './GadgetUI'
@@ -294,7 +295,7 @@ function PaneWorkpieceTabs({
             <span className="truncate">{gadget.title}</span>
             {gadget.chatId !== undefined && (
               <span className="flex-shrink-0 rounded-full bg-kumo-fill px-1.5 py-0.5 text-[10px] font-medium leading-none text-kumo-subtle">
-                Draft
+                <Trans>Draft</Trans>
               </span>
             )}
           </button>
@@ -412,10 +413,10 @@ function NoGadgetPlaceholder({ height }: { height: string }) {
     <div className="flex items-center justify-center px-6 text-center" style={{ height }}>
       <div className="max-w-[360px]">
         <p className="m-0 text-[15px] leading-[22px] font-semibold tracking-[-0.3px] text-kumo-default">
-          No gadgets yet
+          <Trans>No gadgets yet</Trans>
         </p>
         <p className="mt-1.5 mb-0 text-[13px] leading-[19px] tracking-[-0.25px] text-kumo-subtle">
-          Ask the agent in chat to build something, and it will appear here.
+          <Trans>Ask the agent in chat to build something, and it will appear here.</Trans>
         </p>
       </div>
     </div>
@@ -1330,10 +1331,10 @@ export default function GadgetEditor() {
         </p>
         <div className="flex items-center gap-2">
           <WorkshopButton tone="secondary" onClick={handleGoToWorkspaces}>
-            Go to workspaces
+            <Trans>Go to workspaces</Trans>
           </WorkshopButton>
           <WorkshopButton tone="primary" onClick={retryOpen}>
-            Try again
+            <Trans>Try again</Trans>
           </WorkshopButton>
         </div>
       </div>
@@ -1348,7 +1349,7 @@ export default function GadgetEditor() {
       <div className="flex min-h-full items-center justify-center bg-kumo-base">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-kumo-brand border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-kumo-subtle">Loading workspace…</p>
+          <p className="text-sm text-kumo-subtle"><Trans>Loading workspace…</Trans></p>
         </div>
         {observerConfig && (
           <ObserverConfigModal
@@ -1534,7 +1535,7 @@ export default function GadgetEditor() {
             !showFullEditor ? 'bg-kumo-tint text-kumo-default' : 'text-kumo-subtle'
           }`}
         >
-          Chat
+          <Trans>Chat</Trans>
         </button>
         <button
           type="button"
@@ -1545,7 +1546,7 @@ export default function GadgetEditor() {
             mobilePreviewActive ? 'bg-kumo-tint text-kumo-default' : 'text-kumo-subtle'
           }`}
         >
-          Preview
+          <Trans>Preview</Trans>
         </button>
         <button
           type="button"
@@ -1581,14 +1582,14 @@ export default function GadgetEditor() {
               onClick={() => openMobilePane('code')}
               className={MENU_ITEM}
             >
-              Code
+              <Trans>Code</Trans>
             </DropdownMenu.Item>
             <DropdownMenu.Item
               disabled={!selectedGadgetStub}
               onClick={() => openMobilePane('connections')}
               className={MENU_ITEM}
             >
-              Connections
+              <Trans>Connections</Trans>
             </DropdownMenu.Item>
             {visibleGadgets.length > 1 && <DropdownMenu.Separator />}
             {visibleGadgets.length > 1 && visibleGadgets.map(workpiece => (
@@ -1602,24 +1603,24 @@ export default function GadgetEditor() {
             ))}
             <DropdownMenu.Separator />
             <DropdownMenu.Item onClick={() => setIsEditingTitle(true)} className={MENU_ITEM}>
-              Rename workspace
+              <Trans>Rename workspace</Trans>
             </DropdownMenu.Item>
             <DropdownMenu.Item onClick={() => setShareModalOpen(true)} className={MENU_ITEM}>
-              Share workspace
+              <Trans>Share workspace</Trans>
             </DropdownMenu.Item>
             <DropdownMenu.Item
               disabled={!selectedGadgetStub}
               onClick={() => setBlueprintModalOpen(true)}
               className={MENU_ITEM}
             >
-              Blueprints
+              <Trans>Blueprints</Trans>
             </DropdownMenu.Item>
             <DropdownMenu.Item
               disabled={!mobilePreviewActive}
               onClick={enterGadgetFullscreen}
               className={MENU_ITEM}
             >
-              Full-screen preview
+              <Trans>Full-screen preview</Trans>
             </DropdownMenu.Item>
             {!metadata.owner && (
               <>
@@ -1629,7 +1630,7 @@ export default function GadgetEditor() {
                   onClick={() => setDeleteDialogOpen(true)}
                   className={MENU_ITEM_DANGER}
                 >
-                  Delete workspace
+                  <Trans>Delete workspace</Trans>
                 </DropdownMenu.Item>
               </>
             )}
@@ -1701,7 +1702,7 @@ export default function GadgetEditor() {
                 <div className="absolute inset-0 flex items-center justify-center bg-kumo-base">
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-6 h-6 border-2 border-kumo-brand border-t-transparent rounded-full animate-spin" />
-                    <p className="text-sm text-kumo-subtle">Loading conversation…</p>
+                    <p className="text-sm text-kumo-subtle"><Trans>Loading conversation…</Trans></p>
                   </div>
                 </div>
               )}

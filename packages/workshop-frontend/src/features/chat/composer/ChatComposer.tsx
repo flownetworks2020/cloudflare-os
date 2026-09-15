@@ -22,6 +22,7 @@ import type {
   SlashCommandChoice,
   SlashCommandRequest,
 } from "@gadgets/workshop-shared/api";
+import { t } from "@lingui/core/macro";
 import { isTransientRpcError } from "../../../rpcErrors";
 import { slashCommandTokenKey } from "./slash-commands/slashCommandInput";
 import {
@@ -701,8 +702,8 @@ export const ChatComposer = ({
           <div className="px-4 pt-2 text-xs text-kumo-warning">
             {/* Composers without a chatKey (new-chat, home page) have no thread to check. */}
             {chatKey != null
-              ? "Connection hiccup — your message may not have been sent. Check the thread, then try again; if it keeps failing, reload the page."
-              : "Connection hiccup — your message may not have been sent. Try again; if it keeps failing, reload the page."}
+              ? t`Connection hiccup — your message may not have been sent. Check the thread, then try again; if it keeps failing, reload the page.`
+              : t`Connection hiccup — your message may not have been sent. Try again; if it keeps failing, reload the page.`}
           </div>
         )}
         {/* Textarea */}
@@ -712,7 +713,7 @@ export const ChatComposer = ({
           <div className="sr-only" aria-live="polite">
             {slashCommandPicker.status ||
               (selectedSlashCommand
-                ? `Slash command /${selectedSlashCommand.choice.name} from ${selectedSlashCommand.choice.providerLabel} is ready to send`
+                ? t`Slash command /${selectedSlashCommand.choice.name} from ${selectedSlashCommand.choice.providerLabel} is ready to send`
                 : "")}
           </div>
           <div ref={wrapperRef} className={styles.capsuleInputWrapper}>
@@ -783,10 +784,10 @@ export const ChatComposer = ({
                 isBlocked
                   ? blockedReason
                   : isAgentActive
-                    ? "Waiting for agent…"
+                    ? t`Waiting for agent…`
                     : newChat
-                      ? "Start a new conversation…"
-                      : "Ask a follow-up…"
+                      ? t`Start a new conversation…`
+                      : t`Ask a follow-up…`
               }
               autoFocus={autoFocus}
               rows={minRows}
@@ -918,7 +919,7 @@ export const ChatComposer = ({
                   <button
                     type="button"
                     className="group flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg text-kumo-inactive transition-[background-color,color,transform] duration-150 ease-out hover:bg-kumo-tint hover:text-kumo-subtle focus-visible:bg-kumo-tint focus-visible:text-kumo-subtle focus-visible:outline-none active:scale-[0.96] data-[popup-open]:bg-kumo-tint data-[popup-open]:text-kumo-subtle sm:h-8 sm:w-8"
-                    aria-label="More chat options"
+                    aria-label={t`More chat options`}
                   >
                     <DotsThree size={18} weight="bold" />
                   </button>
@@ -942,7 +943,7 @@ export const ChatComposer = ({
                       <Brain size={14} />
                     </span>
                     <span className="flex-1">
-                      {showThinkingTraces ? "Hide thinking" : "Show thinking"}
+                      {showThinkingTraces ? t`Hide thinking` : t`Show thinking`}
                     </span>
                   </DropdownMenu.Item>
                 )}
@@ -962,7 +963,7 @@ export const ChatComposer = ({
                   onClick={onStop}
                   tone="primary"
                   className="!h-10 !w-10 sm:!h-8 sm:!w-8"
-                  aria-label="Stop agent"
+                  aria-label={t`Stop agent`}
                 >
                   <svg
                     width="14"
@@ -979,7 +980,7 @@ export const ChatComposer = ({
                   disabled={!canSend}
                   tone="primary"
                   className="!h-10 !w-10 disabled:cursor-not-allowed disabled:opacity-30 sm:!h-8 sm:!w-8"
-                  aria-label="Send message"
+                  aria-label={t`Send message`}
                 >
                   {/* Arrow-up icon */}
                   <svg

@@ -1,4 +1,6 @@
 import { File as FileIcon, X } from "@phosphor-icons/react";
+import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { ComposerAttachment } from "./useComposerAttachments";
 
 export const ComposerAttachmentTray = ({
@@ -22,7 +24,7 @@ export const ComposerAttachmentTray = ({
           {attachment.previewUrl ? (
             <img
               src={attachment.previewUrl}
-              alt={attachment.name ?? "Attached file"}
+              alt={attachment.name ?? t`Attached file`}
               className="h-full w-full object-cover"
             />
           ) : (
@@ -30,17 +32,17 @@ export const ComposerAttachmentTray = ({
           )}
           {attachment.uploadState === "uploading" && (
             <div className="absolute inset-0 grid place-items-center rounded-lg bg-black/35 text-[10px] text-white">
-              Uploading
+              <Trans>Uploading</Trans>
             </div>
           )}
           {attachment.uploadState === "error" && (
             <div className="absolute inset-0 grid place-items-center rounded-lg bg-kumo-danger/80 px-1 text-center text-[9px] leading-3 text-white">
-              Failed
+              <Trans>Failed</Trans>
             </div>
           )}
           <button
             type="button"
-            aria-label="Remove attachment"
+            aria-label={t`Remove attachment`}
             disabled={disabled}
             onClick={() => onRemove(attachment.id)}
             className="absolute right-0.5 top-0.5 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:cursor-not-allowed disabled:opacity-50"

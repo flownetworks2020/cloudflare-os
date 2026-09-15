@@ -15,6 +15,7 @@ import {
   MessageFormatRef,
   SlashCommandRequest,
 } from "@gadgets/workshop-shared/api";
+import { Trans } from "@lingui/react/macro";
 import {
   getStoredSelectedModel,
   persistSelectedModel,
@@ -188,10 +189,10 @@ export function HomePageContent({ prompt, model }: HomeSearch) {
         {/* Hero */}
         <header className="text-center">
           <h1 className="text-3xl font-semibold tracking-tight leading-tight text-kumo-default sm:text-4xl">
-            What are we working on?
+            <Trans>What are we working on?</Trans>
           </h1>
           <p className="mx-auto mt-3 max-w-md text-[14px] leading-5 tracking-[-0.25px] text-kumo-subtle">
-            Ask a question, create an output, or create an app that works with your tools and data.
+            <Trans>Ask a question, create an output, or create an app that works with your tools and data.</Trans>
           </p>
         </header>
 

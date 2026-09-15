@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CloudflareUsageInfo, CloudflareAccountOption } from '@gadgets/workshop-shared/api'
 import { Button, useKumoToastManager } from '@cloudflare/kumo'
 import { Lightning, CloudCheck, Warning } from '@phosphor-icons/react'
+import { Trans } from '@lingui/react/macro'
 import CloudflareLogo from '../auth/CloudflareLogo'
 import { useAuthenticatedApi } from '../../AuthContext'
 import { useCloudflareLimitsEnabled } from '../../ServerConfigContext'
@@ -88,16 +89,16 @@ export default function UsageSettings() {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="px-1 text-[12px] font-medium uppercase tracking-[0.08em] text-kumo-inactive">
-        Usage &amp; billing
+        <Trans>Usage &amp; billing</Trans>
       </h2>
       <div className="rounded-xl border border-kumo-line bg-kumo-base p-5">
       {loading || !usage ? (
-        <p className="text-sm text-kumo-subtle">Loading usage…</p>
+        <p className="text-sm text-kumo-subtle"><Trans>Loading usage…</Trans></p>
       ) : (
         <div className="space-y-6">
           {/* Free daily allowance */}
           <div>
-            <p className="text-xs font-medium text-kumo-subtle mb-1">Free daily allowance</p>
+            <p className="text-xs font-medium text-kumo-subtle mb-1"><Trans>Free daily allowance</Trans></p>
             <p className="text-sm text-kumo-default">
               {usage.remaining} of {usage.dailyLimit}{' '}
               {usage.dailyLimit === 1 ? 'request' : 'requests'} remaining today
@@ -112,22 +113,22 @@ export default function UsageSettings() {
 
           {/* Cloudflare connection / credits */}
           <div>
-            <p className="text-xs font-medium text-kumo-subtle mb-1">Cloudflare account</p>
+            <p className="text-xs font-medium text-kumo-subtle mb-1"><Trans>Cloudflare account</Trans></p>
             {!usage.connected ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm text-kumo-subtle">
                   <CloudflareLogo size={16} />
-                  <span>Not connected</span>
+                  <span><Trans>Not connected</Trans></span>
                 </div>
                 <p className="text-sm text-kumo-subtle">
-                  Connect your Cloudflare account to keep building once your free allowance runs
+                  <Trans>Connect your Cloudflare account to keep building once your free allowance runs
                   out. Usage beyond the free tier is billed to your own Cloudflare AI Gateway
-                  credits.
+                  credits.</Trans>
                 </p>
                 <div className="pt-1">
                   <Button variant="primary" size="sm" onClick={connect} loading={busy}>
                     <Lightning size={14} weight="bold" className="mr-1" />
-                    Connect Cloudflare
+                    <Trans>Connect Cloudflare</Trans>
                   </Button>
                 </div>
               </div>
@@ -136,17 +137,17 @@ export default function UsageSettings() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm text-kumo-default">
                   <Warning size={18} weight="bold" className="text-kumo-warning" />
-                  <span>Choose which Cloudflare account to bill</span>
+                  <span><Trans>Choose which Cloudflare account to bill</Trans></span>
                 </div>
                 <p className="text-sm text-kumo-subtle">
-                  Your connection has access to multiple Cloudflare accounts. Select the one whose
-                  AI Gateway credits should be used.
+                  <Trans>Your connection has access to multiple Cloudflare accounts. Select the one whose
+                  AI Gateway credits should be used.</Trans>
                 </p>
                 {accounts === null ? (
-                  <p className="text-sm text-kumo-subtle">Loading accounts…</p>
+                  <p className="text-sm text-kumo-subtle"><Trans>Loading accounts…</Trans></p>
                 ) : accounts.length === 0 ? (
                   <p className="text-sm text-kumo-subtle">
-                    No accounts available on this connection.
+                    <Trans>No accounts available on this connection.</Trans>
                   </p>
                 ) : (
                   <div className="flex flex-col gap-2">
@@ -191,7 +192,7 @@ export default function UsageSettings() {
                     onClick={() => window.open(buildAddCreditsUrl(usage.accountId), '_blank')}
                   >
                     <Lightning size={14} weight="bold" className="mr-1" />
-                    Add credits
+                    <Trans>Add credits</Trans>
                   </Button>
                 </div>
               </div>
@@ -206,7 +207,7 @@ export default function UsageSettings() {
               rel="noreferrer"
               className="underline"
             >
-              AI Gateway unified billing
+              <Trans>AI Gateway unified billing</Trans>
             </a>
             .
           </p>

@@ -6,6 +6,8 @@ import {
 } from "react";
 import type { Overseer, SlashCommandChoice } from "@gadgets/workshop-shared/api";
 import { ArrowsInIcon, CaretRightIcon, ScrollIcon } from "@phosphor-icons/react";
+import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import { PICKER_EMPTY, TabHint } from "../../../../components/pickerRows";
 import {
   exactSlashCommandMatches, filterSlashCommandCatalog, parseSlashCommandInput,
@@ -228,14 +230,14 @@ export function useSlashCommandPicker({
         ref={listRef}
         id={listboxId}
         role="listbox"
-        aria-label="Slash commands"
+        aria-label={t`Slash commands`}
         aria-busy={loading}
         className="sidebar-scroll min-h-0 flex-1 overflow-y-auto p-2"
       >
         {error ? (
-          <p className={PICKER_EMPTY}>{`Couldn’t load commands. ${error}`}</p>
+          <p className={PICKER_EMPTY}>{t`Couldn’t load commands. ${error}`}</p>
         ) : loading && choices.length === 0 ? (
-          <p className={PICKER_EMPTY}>Loading commands…</p>
+          <p className={PICKER_EMPTY}><Trans>Loading commands…</Trans></p>
         ) : choices.length > 0 ? (
           choices.map((choice, optionIndex) => (
             <button
@@ -273,7 +275,7 @@ export function useSlashCommandPicker({
           ))
         ) : (
           <p className={PICKER_EMPTY}>
-            {query ? "No commands match your search." : "No commands are available."}
+            {query ? t`No commands match your search.` : t`No commands are available.`}
           </p>
         )}
       </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CloudflareUsageInfo, CloudflareAccountOption } from '@gadgets/workshop-shared/api'
 import { Dialog, Button, Loader, useKumoToastManager } from '@cloudflare/kumo'
 import { CloudWarning, Lightning } from '@phosphor-icons/react'
+import { Trans } from '@lingui/react/macro'
 import { useOptionalAuthenticatedApi } from '../../AuthContext'
 import { buildAddCreditsUrl } from './creditsUrl'
 import ResetCountdown from './ResetCountdown'
@@ -97,7 +98,7 @@ export default function OutOfCreditsModal({ open, onClose }: OutOfCreditsModalPr
       <Dialog className="responsive-dialog overflow-y-auto p-6 sm:w-[560px]" size="base">
         <Dialog.Title className="text-lg font-semibold mb-2 flex items-center gap-2">
           <CloudWarning size={22} weight="bold" className="text-kumo-warning" />
-          You've reached your free usage limit
+          <Trans>You've reached your free usage limit</Trans>
         </Dialog.Title>
 
         {usage === null ? (
@@ -118,8 +119,8 @@ export default function OutOfCreditsModal({ open, onClose }: OutOfCreditsModalPr
               </p>
             ) : needsSelection ? (
               <p className="text-sm text-kumo-subtle">
-                Your Cloudflare connection has access to multiple accounts. Choose which one's AI
-                Gateway credits should be billed for usage beyond the free tier.
+                <Trans>Your Cloudflare connection has access to multiple accounts. Choose which one's AI
+                Gateway credits should be billed for usage beyond the free tier.</Trans>
               </p>
             ) : (
               <p className="text-sm text-kumo-subtle">
@@ -141,9 +142,9 @@ export default function OutOfCreditsModal({ open, onClose }: OutOfCreditsModalPr
             {needsSelection && (
               <div className="flex flex-col gap-2">
                 {accounts === null ? (
-                  <p className="text-sm text-kumo-subtle">Loading accounts…</p>
+                  <p className="text-sm text-kumo-subtle"><Trans>Loading accounts…</Trans></p>
                 ) : accounts.length === 0 ? (
-                  <p className="text-sm text-kumo-subtle">No accounts available on this connection.</p>
+                  <p className="text-sm text-kumo-subtle"><Trans>No accounts available on this connection.</Trans></p>
                 ) : (
                   accounts.map((a) => (
                     <Button
@@ -169,7 +170,7 @@ export default function OutOfCreditsModal({ open, onClose }: OutOfCreditsModalPr
                 rel="noreferrer"
                 className="underline"
               >
-                AI Gateway unified billing
+                <Trans>AI Gateway unified billing</Trans>
               </a>
               .
             </p>
@@ -177,22 +178,22 @@ export default function OutOfCreditsModal({ open, onClose }: OutOfCreditsModalPr
             <div className="flex items-center justify-end gap-2 pt-2">
               {!connected ? (
                 <>
-                  <Button variant="secondary" onClick={onClose}>Maybe later</Button>
+                  <Button variant="secondary" onClick={onClose}><Trans>Maybe later</Trans></Button>
                   <Button variant="primary" onClick={connect} loading={connecting}>
                     <Lightning size={16} weight="bold" />
-                    Connect Cloudflare
+                    <Trans>Connect Cloudflare</Trans>
                   </Button>
                 </>
               ) : needsSelection ? (
-                <Button variant="secondary" onClick={onClose}>Close</Button>
+                <Button variant="secondary" onClick={onClose}><Trans>Close</Trans></Button>
               ) : (
                 <>
-                  <Button variant="secondary" onClick={onClose}>Close</Button>
+                  <Button variant="secondary" onClick={onClose}><Trans>Close</Trans></Button>
                   <Button
                     variant="primary"
                     onClick={() => window.open(buildAddCreditsUrl(usage.accountId), '_blank')}
                   >
-                    Add credits in Cloudflare
+                    <Trans>Add credits in Cloudflare</Trans>
                   </Button>
                 </>
               )}

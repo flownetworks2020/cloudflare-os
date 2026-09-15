@@ -3,6 +3,8 @@ import { Popover } from '@cloudflare/kumo'
 import { ArrowRight, Pulse } from '@phosphor-icons/react'
 import type { RpcStub } from 'capnweb'
 import type { Overseer } from '@gadgets/workshop-shared/api'
+import { t } from '@lingui/core/macro'
+import { Trans } from '@lingui/react/macro'
 import { CountBadge } from './components/CountBadge'
 import { ResolveButton } from './components/ResolveButton'
 import {
@@ -63,7 +65,7 @@ export default function ActivityNotifications({
       >
         <div className="flex items-center justify-between gap-2 px-3.5 pb-1 pt-2.5">
           <Popover.Title className="text-[11px] font-medium uppercase tracking-[0.06em] text-kumo-inactive">
-            Needs review
+            <Trans>Needs review</Trans>
           </Popover.Title>
           <CountBadge count={pending.length} />
         </div>
@@ -72,7 +74,7 @@ export default function ActivityNotifications({
           <p className="m-0 px-3.5 pb-3 pt-1 text-[13px] leading-[18px] tracking-[-0.25px] text-kumo-subtle">
             {status === 'error' ? PENDING_ERROR_COPY
               : status === 'checking' ? PENDING_CHECKING_COPY
-              : 'Nothing is waiting on you.'}
+              : t`Nothing is waiting on you.`}
           </p>
         ) : (
           <div className="max-h-[min(58vh,420px)] overflow-y-auto pb-1">
@@ -128,8 +130,8 @@ export default function ActivityNotifications({
           >
             <span>
               {pending.length > PREVIEW_LIMIT
-                ? `View all ${pending.length} requests`
-                : 'View all activity'}
+                ? t`View all ${pending.length} requests`
+                : t`View all activity`}
             </span>
             <ArrowRight size={13} className="text-kumo-inactive" />
           </button>

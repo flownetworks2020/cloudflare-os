@@ -4,6 +4,8 @@ import { CaretRight, Check, Eye, Lightning, ShieldCheck } from '@phosphor-icons/
 import { RpcStub } from 'capnweb'
 import { ActionLogEntry, Overseer, actionChangeTime } from '@gadgets/workshop-shared/api'
 import { ActionKind } from '@gadgets/workshop-shared/gatekeeper'
+import { t } from '@lingui/core/macro'
+import { Trans } from '@lingui/react/macro'
 import { GatekeeperIcon } from './components/GatekeeperIcon'
 import { HookToggle } from './components/HookToggle'
 import { AlwaysApproveButton, ResolveButton } from './components/ResolveButton'
@@ -118,7 +120,7 @@ function LoadOlderButton({ history, className, label = 'Load older' }: {
   return (
     <WorkshopButton className={className} onClick={history.loadMore}
         disabled={history.isLoadingMore}>
-      {history.isLoadingMore ? 'Loading…' : label}
+      {history.isLoadingMore ? t`Loading…` : label}
     </WorkshopButton>
   )
 }
@@ -220,7 +222,7 @@ export default function Activity({
             <span className="text-[12.5px] font-medium leading-[17px] tracking-[-0.15px] text-kumo-default">
               {pendingActions.length} {pendingActions.length === 1 ? 'request' : 'requests'} waiting
             </span>
-            <span className="ml-auto text-[11.5px] leading-[17px] text-kumo-inactive">Oldest first</span>
+            <span className="ml-auto text-[11.5px] leading-[17px] text-kumo-inactive"><Trans>Oldest first</Trans></span>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {pendingActions.map(record => {
@@ -256,12 +258,12 @@ export default function Activity({
             })}
             {pendingStatus === 'checking' && (
               <p className="m-0 px-5 py-3 text-center text-[12px] leading-4 text-kumo-inactive">
-                Still checking older activity…
+                <Trans>Still checking older activity…</Trans>
               </p>
             )}
             {pendingStatus === 'error' && (
               <p className="m-0 px-5 py-3 text-center text-[12px] leading-4 text-kumo-inactive">
-                Could not finish checking for requests — reload the page to try again.
+                <Trans>Could not finish checking for requests — reload the page to try again.</Trans>
               </p>
             )}
           </div>
@@ -280,8 +282,8 @@ export default function Activity({
     if (pendingStatus === 'error') {
       return (
         <ActivityNotice
-          title="Could not check for requests"
-          description="Reload the page to try again."
+          title={t`Could not check for requests`}
+          description={t`Reload the page to try again.`}
         />
       )
     }
@@ -289,11 +291,11 @@ export default function Activity({
     return (
       <ActivityNotice
         icon={<Check size={17} weight="bold" />}
-        title="Nothing to review"
-        description="Requests that need your approval show up here and in the workspace header."
+        title={t`Nothing to review`}
+        description={t`Requests that need your approval show up here and in the workspace header.`}
       >
         <WorkshopButton className="mt-4" onClick={() => onViewChange('history')}>
-          View history
+          <Trans>View history</Trans>
         </WorkshopButton>
       </ActivityNotice>
     )
@@ -304,9 +306,9 @@ export default function Activity({
       return (
         <div className="min-h-0 flex-1 overflow-auto">
           <div className="grid grid-cols-[54px_minmax(0,1fr)_auto_16px] items-center gap-3 border-b border-kumo-line bg-kumo-elevated/50 px-5 py-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-kumo-inactive">
-            <span>Time</span>
-            <span>Event</span>
-            <span>Status</span>
+            <span><Trans>Time</Trans></span>
+            <span><Trans>Event</Trans></span>
+            <span><Trans>Status</Trans></span>
             <span />
           </div>
           {historyGroups.map(group => (
@@ -334,9 +336,9 @@ export default function Activity({
           {history.loadMoreFailed ? (
             <div className="flex items-center justify-center gap-3 py-3">
               <span className="text-[12px] leading-4 text-kumo-inactive">
-                Couldn't load older activity
+                <Trans>Couldn't load older activity</Trans>
               </span>
-              <LoadOlderButton history={history} label="Retry" />
+              <LoadOlderButton history={history} label={t`Retry`} />
             </div>
           ) : history.hasMore && (
             <div className="flex justify-center py-3">
@@ -349,8 +351,8 @@ export default function Activity({
 
     if (history.status === 'error') {
       return (
-        <ActivityNotice title="Could not load activity">
-          <LoadOlderButton className="mt-4" history={history} label="Retry" />
+        <ActivityNotice title={t`Could not load activity`}>
+          <LoadOlderButton className="mt-4" history={history} label={t`Retry`} />
         </ActivityNotice>
       )
     }
@@ -358,14 +360,14 @@ export default function Activity({
     if (history.status === 'loading') {
       return (
         <div className="flex flex-1 items-center justify-center text-[13px] text-kumo-subtle">
-          Loading activity…
+          <Trans>Loading activity…</Trans>
         </div>
       )
     }
 
     if (history.hasMore) {
       return (
-        <ActivityNotice title="Nothing in the most recent activity">
+        <ActivityNotice title={t`Nothing in the most recent activity`}>
           <LoadOlderButton className="mt-4" history={history} />
         </ActivityNotice>
       )
@@ -374,20 +376,20 @@ export default function Activity({
     if (historyFilter === 'all') {
       return (
         <ActivityNotice
-          title="No activity yet"
-          description="Every resource an agent reads or changes is recorded here."
+          title={t`No activity yet`}
+          description={t`Every resource an agent reads or changes is recorded here.`}
         />
       )
     }
 
     return (
-      <ActivityNotice title="No matching events">
+      <ActivityNotice title={t`No matching events`}>
         <button
           type="button"
           onClick={() => setHistoryFilter('all')}
           className="mt-1.5 cursor-pointer text-[12px] font-medium text-kumo-subtle hover:text-kumo-default"
         >
-          Show all activity
+          <Trans>Show all activity</Trans>
         </button>
       </ActivityNotice>
     )
@@ -496,7 +498,7 @@ function AutoApprovalPanel({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-[13px] text-kumo-subtle">
-        Loading auto-approval…
+        <Trans>Loading auto-approval…</Trans>
       </div>
     )
   }
@@ -505,16 +507,16 @@ function AutoApprovalPanel({
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
         <p className="m-0 text-[13px] font-medium leading-[18px] tracking-[-0.25px] text-kumo-default">
-          {loadError ? 'Could not load auto-approval' : 'Nothing can run automatically'}
+          {loadError ? t`Could not load auto-approval` : t`Nothing can run automatically`}
         </p>
         <p className="mt-1 max-w-xs text-[13px] leading-[18px] tracking-[-0.25px] text-kumo-subtle">
           {loadError
-            ? 'The current rules may be incomplete. Try loading them again.'
-            : 'Action types appear here once a connected resource offers one its author marked safe to apply without review.'}
+            ? t`The current rules may be incomplete. Try loading them again.`
+            : t`Action types appear here once a connected resource offers one its author marked safe to apply without review.`}
         </p>
         {loadError && (
           <WorkshopButton className="mt-4" onClick={() => void refresh()}>
-            Retry
+            <Trans>Retry</Trans>
           </WorkshopButton>
         )}
       </div>
@@ -526,8 +528,8 @@ function AutoApprovalPanel({
       <div className={`${PANE_BAR} gap-3 px-5`}>
         <p className="m-0 min-w-0 flex-1 truncate text-[12.5px] leading-[17px] tracking-[-0.2px] text-kumo-subtle">
           {loadError
-            ? 'Some auto-approval options could not be loaded.'
-            : 'Actions agents may take without asking. Everything else waits for your review.'}
+            ? t`Some auto-approval options could not be loaded.`
+            : t`Actions agents may take without asking. Everything else waits for your review.`}
         </p>
         {loadError && (
           <button
@@ -535,7 +537,7 @@ function AutoApprovalPanel({
             onClick={() => void refresh()}
             className="cursor-pointer text-[12px] font-medium text-kumo-default hover:text-kumo-default-hover"
           >
-            Retry
+            <Trans>Retry</Trans>
           </button>
         )}
       </div>
@@ -568,10 +570,10 @@ function AutoApprovalPanel({
                     </span>
                     <span className="mt-0.5 block text-[12px] leading-4 tracking-[-0.2px] text-kumo-inactive">
                       {entry.orphaned
-                        ? 'This connection no longer offers this action; the rule still applies.'
+                        ? t`This connection no longer offers this action; the rule still applies.`
                         : entry.enabled
-                          ? 'Applied without asking'
-                          : 'Waits for your approval'}
+                          ? t`Applied without asking`
+                          : t`Waits for your approval`}
                     </span>
                   </span>
                   <Switch
@@ -721,7 +723,7 @@ function HistoryRow({
             <span className="text-kumo-subtle">{record.resourceTitle}</span>
             {resolvedBy && (
               <ResolverBadge profileId={resolvedBy.id}>
-                {autoApproved ? `Auto-approved (${resolvedBy.name}'s rule)` : `By ${resolvedBy.name}`}
+                {autoApproved ? t`Auto-approved (${resolvedBy.name}'s rule)` : t`By ${resolvedBy.name}`}
               </ResolverBadge>
             )}
             {resourceUrl && (
@@ -731,7 +733,7 @@ function HistoryRow({
                 rel="noopener noreferrer"
                 className="text-kumo-subtle hover:text-kumo-default hover:underline"
               >
-                Open resource
+                <Trans>Open resource</Trans>
               </a>
             )}
             {record.type === 'bindHook' && record.hookId !== undefined && (

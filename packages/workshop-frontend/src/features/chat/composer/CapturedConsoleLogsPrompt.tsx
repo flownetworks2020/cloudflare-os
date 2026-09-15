@@ -1,5 +1,6 @@
 import { Tooltip } from "@cloudflare/kumo";
 import { X } from "@phosphor-icons/react";
+import { t } from "@lingui/core/macro";
 
 type CapturedConsoleLogsPromptProps = {
   count: number;
@@ -55,7 +56,7 @@ export const CapturedConsoleLogsPrompt = ({
           type="button"
           onClick={onDiscard}
           className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full opacity-60 transition-opacity hover:bg-kumo-tint hover:opacity-100"
-          aria-label="Discard captured logs"
+          aria-label={t`Discard captured logs`}
         >
           <X size={10} />
         </button>
