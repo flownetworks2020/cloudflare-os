@@ -1,9 +1,17 @@
 # Microsoft 365 gatekeeper
 
-Microsoft Entra ID (Azure AD) integration for Gadgets. It serves two purposes:
+Microsoft Entra ID (Azure AD) integration for Gadgets.
 
-- **Sign-in:** when `microsoft` is in the deployment's `AUTH_GATEKEEPERS` allowlist, "Continue with
-  Microsoft" appears on the login page. Sign-in requests only the identity scopes (`openid`,
+> **Flow deployments use this gatekeeper as a connection only.** Identity stays Cloudflare Access,
+> so `microsoft` is never added to `AUTH_GATEKEEPERS`, and the sign-in material below does not
+> apply. Every mailbox write (mark read/unread, move, reply drafts) waits in the Workshop approval
+> queue — none is auto-approvable — and the package has no send path: drafts stay in Outlook for a
+> person to send.
+
+The code supports two purposes:
+
+- **Sign-in (not enabled in Flow):** a deployment that allowlists this gatekeeper for sign-in gets
+  "Continue with Microsoft" on the login page. Sign-in requests only the identity scopes (`openid`,
   `profile`, `email`, `User.Read`) to read the account's **verified email**, which becomes the
   user's identity. The sign-in grant is transient (discarded right after the email is read).
 - **Connections:** when a user connects Microsoft, `Mail.ReadWrite` (plus `offline_access`) is
@@ -24,7 +32,8 @@ same address.
 
 ## Profile hints: name and avatar
 
-Sign-in also seeds the Workshop's display name and avatar from Microsoft Graph, as best-effort hints
+The gatekeeper offers the Workshop a display name and avatar from Microsoft Graph as best-effort
+hints. Flow applies them when a user **connects** the mailbox (the TPG fork applied them at sign-in)
 (see [docs/oauth-signin.md](../../docs/oauth-signin.md) for the seed/backfill policy and the
 never-an-identity-signal guarantee). The name comes from `/me`'s `displayName`; the photo is fetched
 via a size ladder — `/me/photos/240x240/$value` → `/me/photo/$value` → `/me/photos/96x96/$value` —
@@ -123,17 +132,11 @@ MICROSOFT_TENANT_ID=<Directory (tenant) ID>
 are present, the dev server prints a warning; the OAuth page then renders "Microsoft Gatekeeper Not
 Configured" and connection attempts fail the same way.
 
-### Step 6: (Optional) Enable Microsoft sign-in
+### Step 6: Sign-in stays off
 
-To offer "Continue with Microsoft" on the login page, add `microsoft` to the deployment's
-`AUTH_GATEKEEPERS` allowlist (e.g. in the root `.dev.vars`):
-
-```
-AUTH_GATEKEEPERS=microsoft
-```
-
-See [docs/oauth-signin.md](../../docs/oauth-signin.md) for how the allowlist and
-`DISABLE_PASSWORD_AUTH` interact.
+Flow deployments do not offer "Continue with Microsoft": identity is Cloudflare Access, and this
+gatekeeper is not added to the sign-in allowlist. See
+[docs/oauth-signin.md](../../docs/oauth-signin.md) for how that allowlist works elsewhere.
 
 ## Manual verification
 
@@ -146,13 +149,12 @@ Set these in the gitignored root `.dev.vars` and start the dev server (`pnpm dev
 MICROSOFT_CLIENT_ID=<Application (client) ID>
 MICROSOFT_CLIENT_SECRET=<client secret value>
 MICROSOFT_TENANT_ID=<Directory (tenant) ID>
-AUTH_GATEKEEPERS=microsoft
 ```
 
 When a step fails, capture the `AADSTS…` code from the pop-up or the worker log — it is what
 identifies the cause, and guessing without it wastes a round trip.
 
-### Sign-in
+### Sign-in (not applicable to Flow deployments)
 
 - [ ] **Member happy path.** "Continue with Microsoft" → sign in as a tenant member on a verified
       domain → lands in the Workshop. The account's email is the address, **lowercased**; signing
