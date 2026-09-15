@@ -476,6 +476,14 @@ const SHARED_GATEKEEPER_CREDS: Record<string, { id: string; secret: string }> = 
   "gatekeeper-slack": { id: "SLACK_CLIENT_ID", secret: "SLACK_CLIENT_SECRET" },
   "gatekeeper-linear": { id: "LINEAR_CLIENT_ID", secret: "LINEAR_CLIENT_SECRET" },
   "gatekeeper-spotify": { id: "SPOTIFY_CLIENT_ID", secret: "SPOTIFY_CLIENT_SECRET" },
+  "gatekeeper-microsoft": { id: "MICROSOFT_CLIENT_ID", secret: "MICROSOFT_CLIENT_SECRET" },
+};
+
+// Deployment-configured vars a gatekeeper reads under a different name than the shared one. Entra
+// pins every OAuth endpoint to one tenant, so the Microsoft gatekeeper needs its tenant id as well as
+// the shared client credentials above.
+const RENAMED_GATEKEEPER_VARS: Record<string, { from: string; to: string }[]> = {
+  "gatekeeper-microsoft": [{ from: "MICROSOFT_TENANT_ID", to: "TENANT_ID" }],
 };
 
 // Deployment-configured vars a gatekeeper reads that its committed `wrangler.jsonc` deliberately
@@ -511,6 +519,11 @@ for (const gk of gatekeepers) {
   for (const name of PASSTHROUGH_GATEKEEPER_VARS[gk.name] ?? []) {
     if (process.env[name] !== undefined) {
       config.vars[name] = process.env[name];
+    }
+  }
+  for (const { from, to } of RENAMED_GATEKEEPER_VARS[gk.name] ?? []) {
+    if (process.env[from] && config.vars[to] === undefined) {
+      config.vars[to] = process.env[from];
     }
   }
 
