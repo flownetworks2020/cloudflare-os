@@ -1,7 +1,7 @@
 import { WorkerEntrypoint, DurableObject, RpcStub, RpcTarget } from "cloudflare:workers";
 import { skipRpcValidation, validateRpc } from "capnweb-validate";
 import {
-  AccountDescription, Gatekeeper, GatekeeperConnectCallback, GatekeeperConnectOptions,
+  ConnectHandoff, AccountDescription, Gatekeeper, GatekeeperConnectCallback, GatekeeperConnectOptions,
   GatekeeperUser, GatekeeperUserVerifier, GatekeeperVendor as GatekeeperVendorIface,
   ResourceConfiguratorFrame, SupportedResource, VendorDescription, stripTrailingSlashes,
 } from "@gadgets/workshop-shared/gatekeeper";
@@ -18,6 +18,9 @@ import MICROSOFT_LOGO_SVG from "./microsoft-logo.svg";
 import OUTLOOK_MAIL_CONFIGURATOR_HTML from "./generated/outlook-mail-configurator-ui.txt";
 import TYPES_CODE from "./types.txt";
 import { obsContext } from "./observability.js";
+
+import { stageCredentials, commitStagedCredentials, discardStagedCredentials } from "@gadgets/gatekeeper-kit/credential-stage";
+import { connectHandoffPageHtml } from "@gadgets/gatekeeper-kit/connect-pages";
 
 export { OutlookMailGatekeeperImpl } from "./outlook-mail";
 
@@ -142,14 +145,6 @@ function getOAuthConfig(env: Env): OAuthConfig | null {
 }
 
 // =======================================================================================
-
-const SELF_CLOSING_HTML = `<!DOCTYPE html>
-<html lang="en">
-  <body>
-    <script type="text/javascript">window.close();</script>
-    <p>Authorization complete. You may close this tab and return to Cloudflare OS.
-  </body>
-</html>`;
 
 const INVALID_LINK_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -325,12 +320,13 @@ export default {
 
       let userObjectId = ctx.exports.UserAccount.idFromString(doId);
       let stub: DurableObjectStub<UserAccount> = ctx.exports.UserAccount.get(userObjectId);
-      if (!await stub.acceptAuthCode(code, oauthNonce)) {
+      const handoff = await stub.acceptAuthCode(code, oauthNonce);
+      if (!handoff) {
         return new Response(INVALID_LINK_HTML, {
           headers: { "Content-Type": "text/html; charset=utf-8" }
         });
       }
-      return new Response(SELF_CLOSING_HTML, {
+      return new Response(connectHandoffPageHtml(handoff), {
         headers: {
           "Content-Type": "text/html; charset=utf-8"
         }
@@ -448,6 +444,7 @@ export class UserAccount extends DurableObject<Env> {
 
   // Drop every piece of a grant. Callers must hold the credential mutex.
   #clearGrant(): void {
+    discardStagedCredentials(this.ctx.storage.kv);
     this.ctx.storage.kv.delete("refreshToken");
     this.ctx.storage.kv.delete("accessToken");
     this.ctx.storage.kv.delete("idTokenClaims");
@@ -476,7 +473,7 @@ export class UserAccount extends DurableObject<Env> {
 
   /**
    * Prepare this account for a reconnect flow. The next acceptAuthCode() call will replace the
-   * existing refresh token and notify via credentialsRestored() instead of complete().
+   * credentials only after the Workshop confirms its owner and commits the stage.
    *
    * `requestedScopes` is the full set of OAuth scopes to request on the reauthorization.
    */
@@ -540,7 +537,7 @@ export class UserAccount extends DurableObject<Env> {
   /**
    * Returns false if the OAuth nonce is invalid or expired.
    */
-  async acceptAuthCode(code: string, oauthNonce: string): Promise<boolean> {
+  async acceptAuthCode(code: string, oauthNonce: string): Promise<ConnectHandoff | false> {
     // Verify and consume the OAuth nonce.
     let stored = this.ctx.storage.kv.get<StoredNonce>("nonce");
     if (!stored || stored.stage !== "oauth" ||
@@ -600,20 +597,24 @@ export class UserAccount extends DurableObject<Env> {
         }
       }
 
-      this.#storeGrant(grant);
-      this.ctx.storage.kv.put<string[]>("grantScopes", scopes);
+      const stageId = reconnecting
+        ? stageCredentials(this.ctx.storage.kv, { grant, scopes }, Date.now())
+        : undefined;
+      if (!reconnecting) {
+        this.#storeGrant(grant);
+        this.ctx.storage.kv.put<string[]>("grantScopes", scopes);
+        this.ctx.storage.kv.delete("mintFailure");
+      }
       this.ctx.storage.kv.delete("requestedScopes");
-      // These credentials are new, so any recorded permanent failure no longer applies.
-      this.ctx.storage.kv.delete("mintFailure");
-
       if (reconnecting) this.ctx.storage.kv.delete("reconnecting");
-      return { callback, reconnecting, authOnly };
+      return { callback, reconnecting, authOnly, stageId };
     });
 
     let callback = completion.callback;
+    let handoff: ConnectHandoff;
     if (completion.reconnecting) {
-      // Reconnect flow: credentials replaced above, notify restoration.
-      await callback.credentialsRestored();
+      if (!completion.stageId) throw new Error("Reconnect stage was not created.");
+      handoff = await callback.reconnectComplete(completion.stageId);
     } else {
       // Initial connect flow: create the user entrypoint and notify completion.
       //
@@ -623,7 +624,7 @@ export class UserAccount extends DurableObject<Env> {
       // is reported when it happens, via credentialsExpired().
       try {
         let props: GatekeeperUserImplProps = { userObjectId: this.ctx.id.toString() };
-        await callback.complete(this.ctx.exports.GatekeeperUserImpl({props}));
+        handoff = await callback.complete(this.ctx.exports.GatekeeperUserImpl({props}));
       } catch (err) {
         // Nobody received a usable account, so the whole grant is orphaned — not just the refresh
         // token. Leaving the access token behind would let a concurrent mint publish it for an
@@ -638,7 +639,22 @@ export class UserAccount extends DurableObject<Env> {
       }
     }
 
-    return true;
+    return handoff;
+  }
+
+  async commitReconnect(stageId: string): Promise<void> {
+    await this.#updateCredentials(async () => {
+      const staged = commitStagedCredentials<{ grant: EntraTokenGrant; scopes: string[] }>(
+        this.ctx.storage.kv, Date.now(), stageId);
+      if (!staged) throw new Error("No reconnect is awaiting confirmation. Please try again.");
+      const prior = this.ctx.storage.kv.get<IdTokenClaims>("idTokenClaims");
+      if (!prior?.oid || prior.oid !== staged.grant.idTokenClaims?.oid) {
+        throw new Error("The Microsoft account changed before reconnect confirmation.");
+      }
+      this.#storeGrant(staged.grant);
+      this.ctx.storage.kv.put("grantScopes", staged.scopes);
+      this.ctx.storage.kv.delete("mintFailure");
+    });
   }
 
   hasRefreshToken() {
@@ -959,6 +975,10 @@ export class GatekeeperUserImpl extends WorkerEntrypoint<Env, GatekeeperUserImpl
 
   async revoke(): Promise<void> {
     await this.#account().revoke();
+  }
+
+  async commitReconnect(stageId: string): Promise<void> {
+    await this.#account().commitReconnect(stageId);
   }
 
   async reconnect(): Promise<{url: string}> {

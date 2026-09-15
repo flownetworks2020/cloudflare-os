@@ -1,4 +1,4 @@
-# Preserve gadget view navigation across reload and Back
+# Preserve gadget navigation and complete Microsoft reconnect handoffs
 
 ## Overview
 
@@ -10,12 +10,13 @@ Sandboxed gadgets cannot preserve the host workspace's navigation by changing th
 - Accept messages only from the current opaque frame and matching workspace/gadget/chat key.
 - Keep search and other control values in tab session/history state; only bounded view slugs enter the URL.
 - Preserve existing host history fields and query parameters.
+- Repair the integration base’s Microsoft reconnect contract: stage grants until the Workshop commits the exact owner-confirmed stage, then return the standard handoff page. Preserve the existing principal check and credential mutex; reject expired, superseded and revoked stages.
 
 ## Testing
 
 - Five state tests and thirteen GadgetUI integration tests passed, including wrong-frame/origin/key rejection.
 - Frontend type checking and scoped lint passed (one non-blocking test scoping warning).
-- Required root pnpm lint was attempted; its type/build phase fails in unchanged packages/gatekeeper-microsoft/src/microsoft.ts because GatekeeperUserImpl lacks commitReconnect (TS2322/TS2741/TS2420). The branch does not change that connector or shared interface. Full workspace success is not claimed.
+- The original CI build failed on the inherited Microsoft connector missing commitReconnect. The repair passes all 173 connector tests and its TypeScript check, including inert-before-commit, wrong principal, superseded/expired/revoked stages and browser handoff ticket tests. Required root pnpm lint (including type/build checks) passed.
 - Built-in browser verified the actual GadgetUI component with compiled Workroom v15: Estate selection survives reload; Back restores Attention and its search. Provider calls used a local fixture.
 
 ## Notes

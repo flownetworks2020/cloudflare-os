@@ -138,9 +138,9 @@ describe("completion redirect", () => {
     expect(body).toContain("…");
   });
 
-  it("closes the popup once the code is redeemed", async () => {
+  it("returns the owner handoff page once the code is redeemed", async () => {
     await account.setCallback({
-      complete: async () => {}, credentialsExpired: async () => {},
+      complete: async () => ({targetOrigin:"https://workshop.example",ticket:"owner-ticket"}), credentialsExpired: async () => {},
       credentialsRestored: async () => {},
     } as never, INITIATION_NONCE, IDENTITY_SCOPES, false);
     const begun = await account.beginOAuthFlow(INITIATION_NONCE);
@@ -153,7 +153,7 @@ describe("completion redirect", () => {
       env as never, executionContext as never);
 
     expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
-    await expect(response.text()).resolves.toContain("window.close()");
+    await expect(response.text()).resolves.toContain("owner-ticket");
     expect(context.storage.kv.get("refreshToken")).toBe("refresh-1");
   });
 
