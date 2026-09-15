@@ -1,8 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import GadgetEditor from '../GadgetEditor'
+import { validGadgetView } from '../features/gadget-navigation/navigationState'
 
 type GadgetSearch = {
   chat?: number
+  gadgetView?: string
   // Selected workpiece (gadget) ID. Workpiece IDs start at 0, so parsing must not treat 0 as
   // absent.
   w?: number
@@ -24,5 +26,6 @@ export const Route = createFileRoute('/workspace/$id')({
       : typeof search.chat === 'string' ? Number(search.chat) || undefined
       : undefined,
     w: parseIntParam(search.w),
+    gadgetView: validGadgetView(search.gadgetView) ? search.gadgetView : undefined,
   }),
 })
