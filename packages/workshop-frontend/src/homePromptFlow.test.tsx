@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const testState = vi.hoisted(() => {
-  const listModels = vi.fn(async () => [] as Array<{ id: string; name: string; type: "agent" }>);
+  const listModels = vi.fn<() => Promise<Array<{ id: string; name: string; type: "agent" }>>>(async () => []);
   const newGadget = vi.fn<() => never>();
   return {
     addToast: vi.fn<(toast: unknown) => void>(),

@@ -1,3 +1,4 @@
+import {planBlueprintUpgrade, assertBlueprintUpgradeReviewed, type BlueprintUpgradeSource} from "./blueprint-upgrade";
 import { AiChatMessage, AiChatAuthorInfo, AiToolCall, AiChatMessageBody, AgentSpawnerConfig, AiChatStreamEvent, BlueprintOutput, ChatGadgetPin, ChatCodeBase, WorkpieceId, type AiModelConfig, isTextLikeAttachmentMimeType, validateBindingName } from '@gadgets/workshop-shared/api';
 import { applyCodeChange, codeChangeSerializedSize, replaceSpanChange, type CodeContent,
   type CodeChange, type FileChange } from '@gadgets/workshop-shared/code-change';
@@ -661,6 +662,9 @@ export interface AgentHooks {
    */
   fetchBlueprint(blueprintId: string)
       : Promise<{files: Record<string, string>, notes: string, output?: BlueprintOutput}>;
+
+  /** Read an exact published archive for source-only upgrade comparison and staging. */
+  fetchBlueprintUpgradeSource(blueprintId: string, version: number): Promise<BlueprintUpgradeSource>;
 }
 
 // =======================================================================================
@@ -1925,6 +1929,7 @@ export async function runAgent(
                   // if it did, replay the same brush-off the live tool returns.
                   toolOutput = {text: OBSERVE_USER_CHANGES_NOOP_RESULT};
                   break;
+                case "upgradeGadget":
                 case "listBlueprints":
                 case "listConnectableResources":
                 case "requestConnection":
@@ -3074,6 +3079,62 @@ export async function runAgent(
           throw error;
         }
       }
+    }),
+
+    upgradeGadget: defineTool({
+      name: "upgradeGadget",
+      label: "Review blueprint upgrade",
+      description: "Inspect an exact published blueprint upgrade for an existing gadget. " +
+          "Omit reviewToken to compare installed files with fromVersion and preview toVersion. " +
+          "Only after reviewing the returned file changes, pass its reviewToken to stage the " +
+          "exact source in this chat's existing change review. Staging is not acceptance or " +
+          "deployment. The tool never changes bindings, storage, identity or conversations. " +
+          "Customized installations are refused; never erase them with manual rewrites. " +
+          "Do not use this tool unless the user requested an upgrade.",
+      parameters: Type.Object({
+        workpiece: workpieceParam,
+        blueprintId: Type.String({description: "Published blueprint ID, e.g. flow.workroom."}),
+        fromVersion: Type.Integer({minimum: 1, description: "Published version the installed source should match."}),
+        toVersion: Type.Integer({minimum: 1, description: "Exact newer published version to review."}),
+        reviewToken: Type.Optional(Type.String({description: "Token from the unchanged preview; omit for read-only inspection."})),
+      }),
+      execute: async (toolCallId, {workpiece, blueprintId, fromVersion, toVersion, reviewToken}) => {
+        try {
+          const {workpieceId} = hooks.resolveWorkpieceRoot(resolveToolWorkpieceId(workpiece), true, chatId);
+          if (worktreePinBases.has(workpieceId)) {
+            throw new Error("Blueprint upgrades apply to gadgets, not worktrees.");
+          }
+          const head = hooks.getGadgetHead(workpieceId);
+          if (head === undefined) throw new Error("Accept the gadget's initial source before upgrading it.");
+          const headFiles = await hooks.readCommitFiles(head);
+          const current = pinnedGadgets.has(workpieceId)
+              ? sessionContent.get(workpieceId) : headFiles;
+          if (!current) throw new Error("The gadget's current files are unavailable.");
+          const [base, target] = await Promise.all([
+            hooks.fetchBlueprintUpgradeSource(blueprintId, fromVersion),
+            hooks.fetchBlueprintUpgradeSource(blueprintId, toVersion),
+          ]);
+          const plan = await planBlueprintUpgrade(current, base, target, workpieceId);
+          if (reviewToken !== undefined) {
+            assertBlueprintUpgradeReviewed(plan, reviewToken);
+            if (plan.changes.length > 0) {
+              appendAgentEdit(workpieceId, {[workpieceId]: plan.changes},
+                  pinnedGadgets.has(workpieceId) ? undefined : {baseCommit: head, baseFiles: headFiles});
+            }
+          }
+          const {changes: _changes, ...review} = plan;
+          const output = JSON.stringify({
+            gadgetId: workpieceId, blueprintId, fromVersion, toVersion, baseCommit: head,
+            ...review, status: reviewToken === undefined ? "preview" : "staged_for_review",
+            ...(reviewToken !== undefined && plan.changes.length > 0 ? {changeId: nextChangeId} : {}),
+            note: "Source only. Existing bindings and stored data remain in place. Review compatibility before accepting; verify runtime behavior after acceptance.",
+          });
+          return toolResult(output, {output});
+        } catch (error) {
+          toolCallNotes.set(toolCallId, {error: toolErrorText(error)});
+          throw error;
+        }
+      },
     }),
 
     listBlueprints: defineTool({

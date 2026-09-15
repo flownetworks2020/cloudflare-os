@@ -3232,6 +3232,23 @@ export type AiToolCall = {
   toolName: "observeUserChanges";
   input: {};
 } | {
+  /** Preview or stage exact published source on an existing gadget through chat change review. */
+  toolName: "upgradeGadget";
+  input: {
+    /** Existing gadget binding; omitted means the chat's current gadget. */
+    workpiece?: string;
+    /** Published blueprint whose archives provide both source versions. */
+    blueprintId: string;
+    /** Published base version used to detect installed customizations. */
+    fromVersion: number;
+    /** Exact newer published version to stage. */
+    toVersion: number;
+    /** Preview fingerprint; absent for read-only inspection. */
+    reviewToken?: string;
+  };
+  /** Recorded preview or staging receipt. Replay never re-fetches source or re-stages changes. */
+  output?: string;
+} | {
   /**
    * List the blueprints the workspace owner could instantiate (their own blueprints, their
    * library, and the deployment's featured blueprints), so the agent can pass a blueprintId to

@@ -1,3 +1,4 @@
+import type {BlueprintUpgradeSource} from "./blueprint-upgrade";
 import { RpcCompatible, RpcStub, RpcTarget } from "capnweb";
 import { validateRpc } from "capnweb-validate";
 import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, WorkpiecesSubscriber, GadgetClient, GadgetBindingInfo, GatekeeperClient, ActionState, ActionLogEntry, ActionsSubscriber, ActionHistoryFilter, ActionHistoryPage, ChatGadgetPin, ChatCodeBase, ChatGadgetPinState, CodeChangeSubmission, CommitIdentity, CommitInfo, MergeChangesResult, AiChatMetadata, AiChatMessage, AiChatHistoryPage, AiChatSubscriber, AiChatAuthorInfo, AiModelConfig, AiChatMessageBody, AgentSpawnerConfig, ConsoleLogSubscriber, ConsoleLogEvent, CapsuleSpecifier, CollaboratorInfo, CollaboratorRole, AffectedCollaborator, ShareLinkInfo, GatekeeperCreationSpec, ObserverConfigCallback, ObserverBindingNeed, ObserverBindingFailure, BlueprintBindingAnnotation, BlueprintBinding, BlueprintMetadata, BlueprintOutput, MessageFormatRef, isOutputIcon, SpawnerEnvTarget, BlueprintGadgetSummary, AiChatStreamEvent, BlueprintScreenshotUpload, BLUEPRINT_SCREENSHOT_R2_PREFIX, blueprintScreenshotUrl, ChatAttachmentUpload, ChatAttachmentHandle, ChatAttachmentRef, BoundHookInfo, PreApprovableAction, PresenceParticipant, PresenceSubscriber, SlashCommandChoice, SlashCommandRequest, validateBindingName, createOpenGadgetError, OPEN_GADGET_ERROR_CODES, resolveSiteName, actionChangeTime } from '@gadgets/workshop-shared/api';
@@ -9112,6 +9113,25 @@ class OverseerImpl implements AgentHooks {
         event: "formats.agent.list.failed", error: err,
       });
       return [];
+    }
+  }
+
+  // Exact historical source is read-only; never fall back to the latest version.
+  async fetchBlueprintUpgradeSource(blueprintId: string, version: number): Promise<BlueprintUpgradeSource> {
+    const record = await readBlueprintKvRecord(this.env, blueprintId);
+    if (!record || !Number.isSafeInteger(version) || version < 1 || version > record.metadata.version) {
+      throw new Error("The requested published blueprint version is unavailable.");
+    }
+    const code = await readBlueprintContent(this.env, blueprintId, version);
+    if (!code) throw new Error("The exact published archive is unavailable; the upgrade cannot be verified.");
+    const doc = new Y.Doc();
+    try {
+      Y.applyUpdateV2(doc, code);
+      const files = new Map<string, string>();
+      for (const [path, content] of doc.getMap<Y.Text>()) files.set(path, content.toString());
+      return {blueprintId, version, files};
+    } finally {
+      doc.destroy();
     }
   }
 
