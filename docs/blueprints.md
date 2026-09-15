@@ -200,3 +200,17 @@ acceptance, verify the running version and affected operator journeys; a source 
 proof of a successful data migration or runtime outcome. The previous source commit remains in
 history, but reverting code alone does not undo data that the upgraded application later writes.
 Managed models that only receive a transient file workspace do not expose this native tool.
+
+### Restoring the previous source
+
+`upgradeGadget` accepts increasing versions only; it is not a downgrade command. To restore
+source after acceptance, read the verified pre-upgrade commit with `getCodeAtCommit`, stage
+its exact files in a **new** chat pinned to the current gadget commit using `submitCodeChange`,
+and review before `mergeChanges`. Include removal of files that the upgrade added. Preserve
+any intentional subsequent source changes through a separate review rather than overwriting
+them with an old snapshot.
+
+The native integration test rehearses this restoration, including unchanged identity,
+preserved upgrade conversation, and application data written after the upgrade surviving
+the source rollback. This does not prove compatibility with an older deployed CFOS kernel
+or with an application's irreversible data migrations.

@@ -141,6 +141,34 @@ export class Gadget extends DurableObject {
   using upgradedRuntime = await app.connectToGadget() as RpcStub<StoredValueGadget>;
   expect(await upgradedRuntime.recall()).toBe("saved before upgrade");
 
+  // Roll back source through a new review, not by assuming an accepted chat can
+  // be erased or that reverting code will roll back application data.
+  await upgradedRuntime.remember("written after upgrade");
+  const rollbackChat = await installed.newChat("Restore the verified pre-upgrade source", null);
+  const originalFiles = new Map(original.files);
+  const upgradedFiles = new Map(target.files);
+  const restore: [string, { set: string } | { remove: true }][] = [
+    ...originalFiles.entries(),
+  ].map(([path, content]) => [path, { set: content }]);
+  for (const path of upgradedFiles.keys()) {
+    if (!originalFiles.has(path)) restore.push([path, { remove: true }]);
+  }
+  await installed.submitCodeChange(rollbackChat, {
+    generation: 0, revision: 0, clientId: crypto.randomUUID(), seq: 1,
+    pins: [{ gadgetId: after.id, baseCommit: after.commitId }],
+    change: { [after.id]: restore },
+  });
+  expect((await onlyGadget(installed)).commitId).toBe(after.commitId);
+  expect(await installed.mergeChanges(rollbackChat)).toEqual({ outcome: "merged" });
+  const restored = await onlyGadget(installed);
+  expect((await installed.getCodeAtCommit(restored.commitId)).files.toSorted()).toEqual(original.files.toSorted());
+  expect({ ...restored, commitId: before.commitId }).toEqual(before);
+  using restoredRuntime = await app.connectToGadget() as RpcStub<StoredValueGadget>;
+  expect(await restoredRuntime.recall()).toBe("written after upgrade");
+  // Restoring files must preserve the prior upgrade conversation and its receipt.
+  expect(toolOutput((await installed.getChatHistory(staged.chat)).messages, "stage"))
+    .toBe(toolOutput(staged.history, "stage"));
+
   const customPreview = await turn(customized, args, "custom-preview");
   const customToken = JSON.parse(toolOutput(customPreview.history, "custom-preview")).reviewToken;
   await edit(customized, [["local.txt", { set: "Keep my customization" }]]);
