@@ -192,7 +192,7 @@ describe('GadgetUI RPC recovery', () => {
     const gadget = fakeGadget('context', 'document.body.textContent = "context"')
     const context = {
       schema: 'cfos.gadget-ui-context.v1' as const,
-      workspaceId: 'workspace', gadgetId: 'gadget', chatId: 0,
+      workspaceId: 'a'.repeat(64), gadgetId: 0, chatId: 0,
       view: 'chat_preview' as const, clientCodeSha256: 'a'.repeat(64),
     }
     gadget.getUiBundle.mockResolvedValue({ jsCode: 'void 0;', context })
