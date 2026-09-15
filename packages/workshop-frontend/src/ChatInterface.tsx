@@ -613,6 +613,8 @@ function getToolCallSummary(
     }
     case "observeUserChanges":
       return { verb: "Observed user changes" };
+    case "upgradeGadget":
+      return { verb: tc.input.reviewToken ? "Staged upgrade" : "Inspected upgrade", target: tc.input.blueprintId };
     case "listBlueprints":
       return { verb: "Listed blueprints" };
     case "listConnectableResources":
@@ -694,6 +696,8 @@ function describeToolCallCount(toolName: AiToolCall["toolName"], count: number):
       return `Observed ${pluralize(count, "change set")}`;
     case "giveUp":
       return count === 1 ? "Stopped" : `Stopped ${count} times`;
+    case "upgradeGadget":
+      return `Reviewed ${pluralize(count, "blueprint upgrade")}`;
     case "listBlueprints":
       return `Listed blueprints`;
     case "listConnectableResources":
@@ -731,6 +735,7 @@ function getToolIcon(
       return Plus;
     case "createWorktree":
       return GitBranch;
+    case "upgradeGadget":
     case "listBlueprints":
       return Blueprint;
     case "observeUserChanges":
@@ -795,6 +800,7 @@ function getProvisionalToolVerb(toolName: AiToolCall["toolName"]): string {
     case "webFetch": return "Fetching";
     case "observeUserChanges": return "Observing user changes";
     case "giveUp": return "Stopping";
+    case "upgradeGadget": return "Reviewing blueprint upgrade";
     case "listBlueprints": return "Listing blueprints";
     case "listConnectableResources": return "Listing connectable resources";
     case "requestConnection": return "Requesting a connection";
@@ -820,6 +826,7 @@ function describeProvisionalToolCount(toolName: AiToolCall["toolName"], count: n
     case "createWorktree": return `Creating ${pluralize(count, "worktree")}`;
     case "observeUserChanges": return `Observing ${pluralize(count, "change set")}`;
     case "giveUp": return "Stopping";
+    case "upgradeGadget": return "Reviewing blueprint upgrade";
     case "listBlueprints": return "Listing blueprints";
     case "listConnectableResources": return "Listing connectable resources";
     case "requestConnection": return `Requesting ${pluralize(count, "connection")}`;

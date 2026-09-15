@@ -1,3 +1,4 @@
+import {planBlueprintUpgrade, assertBlueprintUpgradeReviewed} from "../src/blueprint-upgrade";
 import { describe, expect, it } from "vitest";
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
@@ -1061,6 +1062,34 @@ describe("agent step barrier", () => {
     return [{ type: "message", message: text }];
   }
   const NO_EXTRAS = { createdGadgets: [], createdWorktrees: [], addedBindings: [] };
+
+  it("stages exact blueprint files without changing identity and only advances the head on accept",
+      () => withImpl(async impl => {
+    const baseFiles = new Map([["client.js", "old"], ["retired.js", "remove"]]);
+    const targetFiles = new Map([["client.js", "new"], ["feedback.js", "exact published bytes"]]);
+    const c1 = await commitFiles(impl, Object.fromEntries(baseFiles));
+    addGadget(impl, 1, "APP", c1);
+    addChat(impl, 1);
+    const before = impl.storage.gadgets.get(1);
+    const plan = await planBlueprintUpgrade(baseFiles,
+        {blueprintId: "flow.workroom", version: 5, files: baseFiles},
+        {blueprintId: "flow.workroom", version: 9, files: targetFiles}, 1);
+    assertBlueprintUpgradeReviewed(plan, plan.reviewToken);
+    await impl.commitAgentStep(1, AGENT, stepMsgs("staged source upgrade"), {
+      ...NO_EXTRAS,
+      changes: [{change: {1: plan.changes}, pin: {gadgetId: 1, baseCommit: c1}}],
+    });
+    expect(impl.storage.gadgets.get(1)).toEqual(before);
+    expect(await gadgetContent(impl, 1, 1)).toEqual(Object.fromEntries(targetFiles));
+    expect(Object.fromEntries((await impl.buildChatContent(1)).get(1)))
+        .toEqual(Object.fromEntries(targetFiles));
+    expect(await impl.mergeChanges(1, USER_META, USER_DO_ID)).toEqual({outcome: "merged"});
+    const after = impl.storage.gadgets.get(1);
+    expect({...after, commitId: c1}).toEqual(before);
+    expect(await impl.gitStore.readCommitFiles(after.commitId)).toEqual(targetFiles);
+    expect(await impl.gitStore.readCommitFiles(c1)).toEqual(baseFiles);
+    expect((await impl.gitStore.readCommitLog(after.commitId, {depth: 1}))[0].parents).toEqual([c1]);
+  }));
 
   it("persists the step message, appends rows in order, and materializes -- one transaction",
       () => withImpl(async impl => {

@@ -179,3 +179,23 @@ A blueprint can outlive its source gadget. If a gadget is deleted, its blueprint
 ## Creation Specs
 
 To support blueprint metadata derivation, each gatekeeper stores a `GatekeeperCreationSpec` that records how it was originally created. This includes the vendor ID (for gatekeeper bindings), provider and model name (for AI model bindings), or the full spawner config (for agent spawner bindings). The creation spec, combined with the blueprint annotation, is used by `collectBindingMetadata` to produce the `BlueprintBinding` records stored in the blueprint.
+
+## Reviewing an upgrade to an existing gadget
+
+Publishing a blueprint does not change gadgets previously created from it. A native Workshop
+agent can use `upgradeGadget` to compare an installed gadget with two exact published versions.
+The first call omits `reviewToken` and returns source hashes, added/modified/removed filenames,
+and any local customizations relative to the stated base version. Archives must still be
+available; the tool never substitutes a different version or generates replacement source.
+
+After reviewing that result, the agent can pass its `reviewToken` to stage the target files in
+the existing chat's change review. The fingerprint binds the gadget, versions and all three
+source trees. A changed preview or customized installation is refused. Staging uses the normal
+atomic agent-step barrier, commit pin and accept/revert flow. It does not create a new gadget,
+change bindings, grant access, migrate stored data or accept changes on the user's behalf.
+
+Review source compatibility with the existing bindings and stored data before accepting. After
+acceptance, verify the running version and affected operator journeys; a source change is not
+proof of a successful data migration or runtime outcome. The previous source commit remains in
+history, but reverting code alone does not undo data that the upgraded application later writes.
+Managed models that only receive a transient file workspace do not expose this native tool.
