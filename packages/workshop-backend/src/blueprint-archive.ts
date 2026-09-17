@@ -32,7 +32,23 @@ export type BlueprintKvRecord = {
    */
   ownerId?: string;
   gadgetId?: string;  // undefined = uploaded, not published from a gadget on this instance
+  /** Immutable published-content ledger. Older galleries may not have one. */
+  versions?: Array<{version: number}>;
 };
+
+/**
+ * Enumerate only archives the gallery actually records. Publication versions are
+ * intentionally not assumed contiguous: a source revision can be rejected or
+ * retired without creating an archive. Legacy records have no ledger, so retain
+ * the older contiguous lookup only for them.
+ */
+export function publishedBlueprintVersions(record: BlueprintKvRecord): number[] {
+  const latest = record.metadata.version;
+  const listed = record.versions?.map(entry => entry.version).filter(version =>
+    Number.isSafeInteger(version) && version >= 1 && version <= latest);
+  if (listed?.length) return [...new Set(listed)].toSorted((left, right) => left - right);
+  return Array.from({length: latest}, (_, index) => index + 1);
+}
 
 export function isReservedBlueprintKey(id: string): boolean {
   return id === FEATURED_BLUEPRINTS_KEY || id === ADMIN_CONFIG_KEY;

@@ -38,7 +38,7 @@ import { deploymentOutputForBlueprint, FormatOffer, listFormatOffers, readAdminC
 import { chatChangeStatuses, foldProposedChanges, isCompactionTurn,
   type ChangeBatch } from "./agent-compaction";
 import { ambientGatekeeperMode } from "./provisioning-policy";
-import { listFeaturedBlueprintsFromKv, readBlueprintContent, readBlueprintKvRecord, sanitizeBlueprintOutput } from "./blueprint-archive";
+import { listFeaturedBlueprintsFromKv, publishedBlueprintVersions, readBlueprintContent, readBlueprintKvRecord, sanitizeBlueprintOutput } from "./blueprint-archive";
 import { WebFetchEnv } from "./web-fetch";
 import { UserDurableObject, UserAiModelRecord, type UserChatContext, type WorkspaceOutputEntry } from "./user";
 import { AgentSpawnerBinding } from "./agent-spawner-binding";
@@ -9340,8 +9340,9 @@ class OverseerImpl implements AgentHooks {
     }
 
     const matches: BlueprintUpgradeSource[] = [];
-    for (let version = 1; version <= latestVersion; version++) {
-      const source = await this.fetchBlueprintUpgradeSource(blueprintId, version);
+    for (const version of publishedBlueprintVersions(record)) {
+      const source = version === target.version ? target :
+        await this.fetchBlueprintUpgradeSource(blueprintId, version);
       if (sameBlueprintFiles(current, source.files)) matches.push(source);
     }
     if (matches.length === 0) {
