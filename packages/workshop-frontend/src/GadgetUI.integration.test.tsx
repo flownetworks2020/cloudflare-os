@@ -207,6 +207,34 @@ describe('GadgetUI RPC recovery', () => {
     await vi.waitFor(() => expect(decodeURIComponent(container.querySelector('iframe')?.srcdoc ?? '')).toContain('Object.freeze(null)'))
   })
 
+  it('accepts navigation only from the current opaque frame and returns state on Back', async () => {
+    window.sessionStorage.clear()
+    window.history.replaceState(null, '', '/workspace/test')
+    const context = { schema: 'cfos.gadget-ui-context.v1' as const, workspaceId: 'a'.repeat(64), gadgetId: 3,
+      chatId: null, view: 'saved' as const, clientCodeSha256: 'b'.repeat(64) }
+    const key = `cfos-ui:${context.workspaceId}:3:saved`
+    const gadget = fakeGadget('navigation', 'void 0;')
+    gadget.getUiBundle.mockResolvedValue({ jsCode: 'void 0;', context })
+    await act(async () => { root.render(<GadgetUI gadget={gadget.stub} height="100px" />) })
+    await vi.waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+    const frame = container.querySelector('iframe')!
+    const send = (origin: string, source: Window | null, scope = key) => window.dispatchEvent(new MessageEvent('message', {
+      origin, source, data: {type: 'cfos-ui-state', key: scope, state: {view: 'estate', queue: {query: 'private search'}}},
+    }))
+    send('https://unrelated.example', frame.contentWindow)
+    send('null', window)
+    send('null', frame.contentWindow, 'another-gadget')
+    expect(window.sessionStorage.getItem(key)).toBeNull()
+    send('null', frame.contentWindow)
+    expect(JSON.parse(window.sessionStorage.getItem(key)!)).toEqual({view: 'estate', queue: {query: 'private search'}})
+    expect(window.location.search).not.toContain('private')
+    const reply = vi.spyOn(frame.contentWindow!, 'postMessage')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(reply).toHaveBeenCalledWith({type: 'cfos-ui-state-restored', state: {view: 'estate', queue: {query: 'private search'}}}, '*')
+    window.sessionStorage.clear()
+    window.history.replaceState(null, '', '/')
+  })
+
   it('keeps the iframe while redirecting calls to the replacement gadget client', async () => {
     const first = fakeGadget('first', 'document.body.textContent = "first"')
     await act(async () => {

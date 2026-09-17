@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { UserAccount } from "../src/microsoft";
 
+const HANDOFF = { targetOrigin: "https://workshop.example", ticket: "test-ticket" };
 const TENANT = "11111111-2222-3333-4444-555555555555";
 const TOKEN_URL = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`;
 const AUTH_SCOPES = ["openid", "profile", "email", "User.Read"];
@@ -44,7 +45,8 @@ function fakeContext() {
 
 function fakeCallback() {
   return {
-    complete: vi.fn(async () => {}),
+    complete: vi.fn(async () => HANDOFF),
+    reconnectComplete: vi.fn(async (_stageId: string) => HANDOFF),
     credentialsExpired: vi.fn(async () => {}),
     credentialsRestored: vi.fn(async () => {}),
   };
@@ -109,7 +111,7 @@ describe("connect flow", () => {
       id_token: idToken({ tid: TENANT, oid: "object-1" }),
     }));
 
-    await expect(connect(account, callback)).resolves.toBe(true);
+    await expect(connect(account, callback)).resolves.toEqual(HANDOFF);
 
     const body = lastTokenRequestBody();
     expect(body.get("grant_type")).toBe("authorization_code");
@@ -152,7 +154,7 @@ describe("connect flow", () => {
     fetchMock.mockResolvedValue(jsonResponse({
       access_token: "access-1", expires_in: 3600, refresh_token: "refresh-1", scope: "openid",
     }));
-    expect(await account.acceptAuthCode("auth-code", begun!.oauthNonce)).toBe(true);
+    expect(await account.acceptAuthCode("auth-code", begun!.oauthNonce)).toEqual(HANDOFF);
     // The OAuth nonce is single-use too.
     expect(await account.acceptAuthCode("auth-code", begun!.oauthNonce)).toBe(false);
   });
@@ -170,11 +172,14 @@ describe("connect flow", () => {
       access_token: "access-2", expires_in: 3600, refresh_token: "refresh-2", scope: "openid",
       id_token: idToken({ tid: TENANT, oid: "object-1" }),
     }));
-    expect(await reconnect(account)).toBe(true);
+    expect(await reconnect(account)).toEqual(HANDOFF);
+    expect(context.storage.kv.get("refreshToken")).toBe("refresh-1");
+    expect(callback.credentialsRestored).not.toHaveBeenCalled();
+    await account.commitReconnect(callback.reconnectComplete.mock.calls[0]![0]);
 
     expect(context.storage.kv.get("refreshToken")).toBe("refresh-2");
     expect(callback.complete).toHaveBeenCalledTimes(1);
-    expect(callback.credentialsRestored).toHaveBeenCalledTimes(1);
+    expect(callback.reconnectComplete).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a reconnect that signs in as a different Microsoft account", async () => {
@@ -371,9 +376,10 @@ describe("mint failure taxonomy", () => {
       id_token: idToken({ tid: TENANT, oid: "object-1" }),
     }));
     await reconnect(account);
-
+    expect(context.storage.kv.get("mintFailure")).toBeDefined();
+    await account.commitReconnect(callback.reconnectComplete.mock.calls[0]![0]);
     expect(context.storage.kv.get("mintFailure")).toBeUndefined();
-    expect(callback.credentialsRestored).toHaveBeenCalledTimes(1);
+    expect(callback.reconnectComplete).toHaveBeenCalledTimes(1);
   });
 
   it("treats a Graph claims challenge as credential death", async () => {
@@ -406,7 +412,7 @@ describe("sign-in-only grants", () => {
       id_token: idToken({ tid: TENANT, oid: "object-1" }),
     }));
 
-    await expect(connect(account, callback, { authOnly: true })).resolves.toBe(true);
+    await expect(connect(account, callback, { authOnly: true })).resolves.toEqual(HANDOFF);
 
     // No refresh token was requested, so none is stored...
     expect(lastTokenRequestBody().get("scope")).toBe(AUTH_SCOPES.join(" "));
@@ -465,4 +471,31 @@ describe("revoke", () => {
     expect(context.storage.kv.get("refreshToken")).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+});
+
+
+describe("owner-confirmed reconnect stages", () => {
+  for (const invalidation of ["superseded", "expired", "revoked"] as const) {
+    it(`refuses a ${invalidation} stage without activating its credentials`, async () => {
+      const { context, account } = newAccount();
+      const callback = fakeCallback();
+      context.storage.kv.put("callback", callback);
+      context.storage.kv.put("refreshToken", "original");
+      context.storage.kv.put("idTokenClaims", {tid:TENANT,oid:"object-1"});
+      fetchMock.mockImplementation(async () => jsonResponse({access_token:"new-access",expires_in:3600,
+        refresh_token:"new-refresh",scope:"openid",id_token:idToken({tid:TENANT,oid:"object-1"})}));
+      await reconnect(account);
+      const first = callback.reconnectComplete.mock.calls[0]![0];
+      if (invalidation === "superseded") await reconnect(account, "s".repeat(64));
+      if (invalidation === "expired") vi.spyOn(Date, "now").mockReturnValue(Date.now()+11*60_000);
+      if (invalidation === "revoked") await account.revoke();
+      await expect(account.commitReconnect(first)).rejects.toThrow(/No reconnect/);
+      expect(context.storage.kv.get("refreshToken")).toBe(invalidation === "revoked" ? undefined : "original");
+      if (invalidation === "superseded") {
+        await account.commitReconnect(callback.reconnectComplete.mock.calls[1]![0]);
+        expect(context.storage.kv.get("refreshToken")).toBe("new-refresh");
+        await expect(account.commitReconnect(first)).rejects.toThrow(/No reconnect/);
+      }
+    });
+  }
 });

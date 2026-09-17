@@ -1,3 +1,4 @@
+import { JSON_DOWNLOAD_CLIENT, validateJsonDownload, downloadJson } from './features/gadget-download/jsonDownload'
 import { useState, useEffect, useRef } from 'react'
 import { Text, Loader, Banner } from '@cloudflare/kumo'
 import { Sparkle } from '@phosphor-icons/react'
@@ -8,6 +9,7 @@ import { GadgetClient, ConsoleLogEvent, GadgetUiContext } from '@gadgets/worksho
 // the whole module and embed it. We can import the module using ?raw to get a string of the
 // content.
 import CAPNWEB_BUNDLE from 'capnweb?raw'
+import { navigationKey, readNavigationState, saveNavigationState } from './features/gadget-navigation/navigationState'
 
 // btoa() below requires this to stay ASCII; capnweb's build enforces ASCII-only dist bundles
 // since 0.11.1.
@@ -105,6 +107,17 @@ window.addEventListener('unhandledrejection', (event) => {
 const createSandboxedHtml = (jsCode: string, context?: GadgetUiContext): string => {
   // The context travels with these code bytes. No parent URL, query, credential or user data.
   const contextCode = `Object.defineProperty(globalThis, "CFOS_CONTEXT", { value: Object.freeze(${JSON.stringify(context ?? null)}), writable: false, configurable: false });\n`
+  const initialState = context ? readNavigationState(navigationKey(context)) : null
+  const navigationCode = `globalThis.CFOS_UI_STATE = {
+    initial: ${JSON.stringify(initialState)},
+    save: (state, replace = false) => window.parent.postMessage({type: 'cfos-ui-state', key: ${JSON.stringify(context ? navigationKey(context) : null)}, state, replace}, '*'),
+    subscribe: callback => {
+      const receive = event => { if (event.source === window.parent && event.data?.type === 'cfos-ui-state-restored') callback(event.data.state); };
+      window.addEventListener('message', receive);
+      return () => window.removeEventListener('message', receive);
+    }
+  };\n`;
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -112,7 +125,7 @@ const createSandboxedHtml = (jsCode: string, context?: GadgetUiContext): string 
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src 'none'; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data:; media-src data:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'none';">
 </head>
 <body>
-    <script type="module" src="data:text/javascript;charset=utf-8,${INJECTED_CODE_PREFIX}${encodeURIComponent(contextCode + jsCode)}"></script>
+    <script type="module" src="data:text/javascript;charset=utf-8,${INJECTED_CODE_PREFIX}${encodeURIComponent(contextCode + navigationCode + JSON_DOWNLOAD_CLIENT + jsCode)}"></script>
 </body>
 </html>`.trim()
 }
@@ -146,6 +159,7 @@ function GadgetUISession({ gadget, height, reloadTrigger, isVisible = true, chat
   const [isInvalidated, setIsInvalidated] = useState(false)
   const [iframeGeneration, setIframeGeneration] = useState(0)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const navigationKeyRef = useRef<string | null>(null)
   const prevReloadTriggerRef = useRef(reloadTrigger)
   // Identifies the newest bundle load, so an older one can't write state after being superseded.
   const loadGenerationRef = useRef(0)
@@ -296,6 +310,7 @@ function GadgetUISession({ gadget, height, reloadTrigger, isVisible = true, chat
         const bundle = await gadget.getUiBundle(chatId)
         if (!isCurrent()) return
         if (bundle) {
+          navigationKeyRef.current = bundle.context ? navigationKey(bundle.context) : null
           const html = createSandboxedHtml(bundle.jsCode, bundle.context)
           setSandboxedHtml(html)
         } else {
@@ -324,6 +339,15 @@ function GadgetUISession({ gadget, height, reloadTrigger, isVisible = true, chat
   // LSP reports an error here, but tsc does not.
   // The LSP error is due to bugs that need to be fixed in Cap'n Web.
   }, [gadget, isVisible, hasLoaded, isInvalidated, chatId, retryNonce])
+
+  useEffect(() => {
+    const restore = () => {
+      const key = navigationKeyRef.current
+      if (key) iframeRef.current?.contentWindow?.postMessage({ type: 'cfos-ui-state-restored', state: readNavigationState(key) }, '*')
+    }
+    window.addEventListener('popstate', restore)
+    return () => window.removeEventListener('popstate', restore)
+  }, [])
 
   // Effect to handle iframe RPC handshake
   useEffect(() => {
@@ -379,6 +403,21 @@ function GadgetUISession({ gadget, height, reloadTrigger, isVisible = true, chat
         } finally {
           if (handshakePendingRef.current === generation) handshakePendingRef.current = null
         }
+      } else if (event.data?.type === 'cfos-download-json' && event.ports?.[0]) {
+        const reply = event.ports[0]
+        try {
+          const request = validateJsonDownload(event.data, navigator.userActivation?.isActive === true)
+          downloadJson(request)
+          // MessagePort is point-to-point and has no targetOrigin argument.
+          // eslint-disable-next-line unicorn/require-post-message-target-origin
+          reply.postMessage({ ok: true })
+        } catch (downloadError) {
+          // MessagePort is bound to the already-validated iframe sender.
+          // eslint-disable-next-line unicorn/require-post-message-target-origin
+          reply.postMessage({ ok: false, error: downloadError instanceof Error ? downloadError.message : 'Export could not start.' })
+        } finally { reply.close() }
+      } else if (event.data?.type === 'cfos-ui-state' && navigationKeyRef.current && event.data.key === navigationKeyRef.current) {
+        saveNavigationState(navigationKeyRef.current, event.data.state, event.data.replace === true)
       } else if (event.data?.type === 'console' && onConsoleLogRef.current) {
         onConsoleLogRef.current({
           timestamp: new Date(),
