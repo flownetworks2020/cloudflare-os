@@ -115,6 +115,9 @@ export class Gadget extends DurableObject {
   const targetHead = await onlyGadget(source);
   const target = await source.getCodeAtCommit(targetHead.commitId);
   const args = { workpiece: "GADGET", blueprintId: blueprint.id, fromVersion: 1, toVersion: 2 };
+  const discovered = await turn(installed, {workpiece: "GADGET", blueprintId: blueprint.id}, "discover");
+  const discoveredResult = JSON.parse(toolOutput(discovered.history, "discover"));
+  expect(discoveredResult).toMatchObject({status: "preview", fromVersion: 1, toVersion: 2, customizedFiles: []});
   const preview = await turn(installed, args, "preview");
   const result = JSON.parse(toolOutput(preview.history, "preview"));
   expect(result.status).toBe("preview");

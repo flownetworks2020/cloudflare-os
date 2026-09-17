@@ -3274,10 +3274,10 @@ export type AiToolCall = {
     workpiece?: string;
     /** Published blueprint whose archives provide both source versions. */
     blueprintId: string;
-    /** Published base version used to detect installed customizations. */
-    fromVersion: number;
-    /** Exact newer published version to stage. */
-    toVersion: number;
+    /** Published base version used to detect installed customizations; omitted for exact discovery. */
+    fromVersion?: number;
+    /** Exact newer published version to stage; omitted for the latest publication. */
+    toVersion?: number;
     /** Preview fingerprint; absent for read-only inspection. */
     reviewToken?: string;
   };
