@@ -1,4 +1,5 @@
 import {describe, expect, it} from 'vitest';
+import {publishedBlueprintVersions} from '../src/blueprint-archive';
 import {assertBlueprintUpgradeReviewed, planBlueprintUpgrade, sameBlueprintFiles} from '../src/blueprint-upgrade';
 
 const files = (rows: Record<string, string>) => new Map(Object.entries(rows));
@@ -6,6 +7,15 @@ const base = {blueprintId: 'flow.workroom', version: 5, files: files({'client.js
 const target = {blueprintId: 'flow.workroom', version: 9, files: files({'client.js': 'new', 'feedback.js': 'module'})};
 
 describe('reviewed blueprint upgrades', () => {
+  it('discovers only ledger-backed historical archives when publication versions have gaps', () => {
+    const record = {
+      metadata: {version: 8},
+      versions: [{version: 1}, {version: 3}, {version: 8}, {version: 3}, {version: 99}],
+    } as any;
+    expect(publishedBlueprintVersions(record)).toEqual([1, 3, 8]);
+    expect(publishedBlueprintVersions({metadata: {version: 3}} as any)).toEqual([1, 2, 3]);
+  });
+
   it('recognizes only identical file trees as an inferred base', () => {
     expect(sameBlueprintFiles(base.files, files({'old.js': 'retired', 'client.js': 'old'}))).toBe(true);
     expect(sameBlueprintFiles(base.files, files({'client.js': 'old'}))).toBe(false);
