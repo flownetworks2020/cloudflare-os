@@ -25,6 +25,7 @@ import { GatekeeperVendorInfo } from '@gadgets/workshop-shared/api'
 import { useDocumentTitle } from '../useDocumentTitle'
 import { useSiteName } from '../ServerConfigContext'
 import { AccountsSubscriberAdapter } from '../accountsSubscriber'
+import { openGatekeeperReconnect } from '../gatekeeperReconnect'
 
 export const Route = createFileRoute('/gatekeepers')({
   component: ConnectorsPage,
@@ -633,8 +634,7 @@ function ConnectorsPage() {
   const handleReconnect = async (accountId: number) => {
     setReconnectingAccountId(accountId)
     try {
-      const { url } = await authenticatedApi.reconnectAccount(accountId)
-      window.open(url, '_blank', 'noopener,noreferrer')
+      await openGatekeeperReconnect(() => authenticatedApi.reconnectAccount(accountId))
     } catch (err) {
       console.error('Failed to reconnect account:', err)
       toasts.add({ title: 'Failed to reconnect account', variant: 'error' })
