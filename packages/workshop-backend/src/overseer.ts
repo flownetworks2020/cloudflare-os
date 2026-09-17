@@ -1,4 +1,4 @@
-import type {BlueprintUpgradeSource} from "./blueprint-upgrade";
+import {sameBlueprintFiles, type BlueprintUpgradeSource} from "./blueprint-upgrade";
 import { RpcCompatible, RpcStub, RpcTarget } from "capnweb";
 import { validateRpc } from "capnweb-validate";
 import { Overseer, GadgetMetadata, UiBundle, WorkpieceId, WorkpieceSummary, WorkpiecesSubscriber, GadgetClient, GadgetBindingInfo, GatekeeperClient, ActionState, ActionLogEntry, ActionsSubscriber, ActionHistoryFilter, ActionHistoryPage, ChatGadgetPin, ChatCodeBase, ChatGadgetPinState, CodeChangeSubmission, CommitIdentity, CommitInfo, MergeChangesResult, AiChatMetadata, AiChatMessage, AiChatHistoryPage, AiChatSubscriber, AiChatAuthorInfo, AiModelConfig, AiChatMessageBody, AgentSpawnerConfig, ConsoleLogSubscriber, ConsoleLogEvent, CapsuleSpecifier, CollaboratorInfo, CollaboratorRole, AffectedCollaborator, ShareLinkInfo, GatekeeperCreationSpec, ObserverConfigCallback, ObserverBindingNeed, ObserverBindingFailure, BlueprintBindingAnnotation, BlueprintBinding, BlueprintMetadata, BlueprintOutput, MessageFormatRef, isOutputIcon, SpawnerEnvTarget, BlueprintGadgetSummary, AiChatStreamEvent, BlueprintScreenshotUpload, BLUEPRINT_SCREENSHOT_R2_PREFIX, blueprintScreenshotUrl, ChatAttachmentUpload, ChatAttachmentHandle, ChatAttachmentRef, BoundHookInfo, PreApprovableAction, PresenceParticipant, PresenceSubscriber, SlashCommandChoice, SlashCommandRequest, validateBindingName, createOpenGadgetError, OPEN_GADGET_ERROR_CODES, resolveSiteName, actionChangeTime } from '@gadgets/workshop-shared/api';
@@ -9317,6 +9317,42 @@ class OverseerImpl implements AgentHooks {
     } finally {
       doc.destroy();
     }
+  }
+
+  // Exact historical source is read-only. Legacy gadgets have no stored blueprint provenance, so
+  // infer a base only when their committed tree exactly matches one and only one published archive.
+  async resolveBlueprintUpgradeSources(blueprintId: string, current: ReadonlyMap<string, string>,
+      fromVersion?: number, toVersion?: number)
+      : Promise<{base: BlueprintUpgradeSource, target: BlueprintUpgradeSource}> {
+    const record = await readBlueprintKvRecord(this.env, blueprintId);
+    if (!record) throw new Error("The requested published blueprint is unavailable.");
+    const latestVersion = record.metadata.version;
+    if (!Number.isSafeInteger(toVersion) && toVersion !== undefined) {
+      throw new Error("The requested published blueprint version is unavailable.");
+    }
+    const resolvedTargetVersion = toVersion ?? latestVersion;
+    if (resolvedTargetVersion < 1 || resolvedTargetVersion > latestVersion) {
+      throw new Error("The requested published blueprint version is unavailable.");
+    }
+    const target = await this.fetchBlueprintUpgradeSource(blueprintId, resolvedTargetVersion);
+    if (fromVersion !== undefined) {
+      return {base: await this.fetchBlueprintUpgradeSource(blueprintId, fromVersion), target};
+    }
+
+    const matches: BlueprintUpgradeSource[] = [];
+    for (let version = 1; version <= latestVersion; version++) {
+      const source = await this.fetchBlueprintUpgradeSource(blueprintId, version);
+      if (sameBlueprintFiles(current, source.files)) matches.push(source);
+    }
+    if (matches.length === 0) {
+      throw new Error("Installed files do not exactly match a published blueprint version. " +
+          "The upgrade cannot prove a safe base; review customizations manually.");
+    }
+    if (matches.length > 1) {
+      throw new Error("Installed files match more than one published blueprint version. " +
+          "Specify the installed version before reviewing an upgrade.");
+    }
+    return {base: matches[0]!, target};
   }
 
   // Fetch a blueprint's decoded files, plus formatted notes describing what was copied and which

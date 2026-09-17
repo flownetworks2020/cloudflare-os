@@ -1,11 +1,17 @@
 import {describe, expect, it} from 'vitest';
-import {assertBlueprintUpgradeReviewed, planBlueprintUpgrade} from '../src/blueprint-upgrade';
+import {assertBlueprintUpgradeReviewed, planBlueprintUpgrade, sameBlueprintFiles} from '../src/blueprint-upgrade';
 
 const files = (rows: Record<string, string>) => new Map(Object.entries(rows));
 const base = {blueprintId: 'flow.workroom', version: 5, files: files({'client.js': 'old', 'old.js': 'retired'})};
 const target = {blueprintId: 'flow.workroom', version: 9, files: files({'client.js': 'new', 'feedback.js': 'module'})};
 
 describe('reviewed blueprint upgrades', () => {
+  it('recognizes only identical file trees as an inferred base', () => {
+    expect(sameBlueprintFiles(base.files, files({'old.js': 'retired', 'client.js': 'old'}))).toBe(true);
+    expect(sameBlueprintFiles(base.files, files({'client.js': 'old'}))).toBe(false);
+    expect(sameBlueprintFiles(base.files, files({'client.js': 'changed', 'old.js': 'retired'}))).toBe(false);
+  });
+
   it('copies exact published bytes and explicitly records additions and removals', async () => {
     const plan = await planBlueprintUpgrade(base.files, base, target, 1);
     expect(plan.added).toEqual(['feedback.js']);

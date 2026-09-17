@@ -29,6 +29,12 @@ function entries(files: ReadonlyMap<string, string>): [string, string][] {
   return [...files].toSorted(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
 }
 
+/** Return whether two file trees have the same paths and exact file contents. */
+export function sameBlueprintFiles(
+    left: ReadonlyMap<string, string>, right: ReadonlyMap<string, string>): boolean {
+  return left.size === right.size && [...left].every(([path, content]) => right.get(path) === content);
+}
+
 /** Compare the installed tree to its claimed published base and prepare an exact target delta. */
 export async function planBlueprintUpgrade(
     current: ReadonlyMap<string, string>, base: BlueprintUpgradeSource,

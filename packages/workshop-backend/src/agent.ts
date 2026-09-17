@@ -684,8 +684,14 @@ export interface AgentHooks {
   fetchBlueprint(blueprintId: string)
       : Promise<{files: Record<string, string>, notes: string, output?: BlueprintOutput}>;
 
-  /** Read an exact published archive for source-only upgrade comparison and staging. */
-  fetchBlueprintUpgradeSource(blueprintId: string, version: number): Promise<BlueprintUpgradeSource>;
+  /**
+   * Resolve exact published source for a source-only upgrade. When no base version is supplied,
+   * the hook only infers one from an exact match against a published archive; it never guesses
+   * from gadget metadata or rewrites customized source.
+   */
+  resolveBlueprintUpgradeSources(blueprintId: string, current: ReadonlyMap<string, string>,
+      fromVersion?: number, toVersion?: number)
+      : Promise<{base: BlueprintUpgradeSource, target: BlueprintUpgradeSource}>;
 }
 
 // =======================================================================================
@@ -3404,7 +3410,8 @@ export async function runAgent(
       name: "upgradeGadget",
       label: "Review blueprint upgrade",
       description: "Inspect an exact published blueprint upgrade for an existing gadget. " +
-          "Omit reviewToken to compare installed files with fromVersion and preview toVersion. " +
+          "Omit versions to discover an exact published base and preview the latest version. " +
+          "Supply versions only when you know them. " +
           "Only after reviewing the returned file changes, pass its reviewToken to stage the " +
           "exact source in this chat's existing change review. Staging is not acceptance or " +
           "deployment. The tool never changes bindings, storage, identity or conversations. " +
@@ -3413,8 +3420,8 @@ export async function runAgent(
       parameters: Type.Object({
         workpiece: workpieceParam,
         blueprintId: Type.String({description: "Published blueprint ID, e.g. flow.workroom."}),
-        fromVersion: Type.Integer({minimum: 1, description: "Published version the installed source should match."}),
-        toVersion: Type.Integer({minimum: 1, description: "Exact newer published version to review."}),
+        fromVersion: Type.Optional(Type.Integer({minimum: 1, description: "Published version the installed source should match; omit to discover an exact base."})),
+        toVersion: Type.Optional(Type.Integer({minimum: 1, description: "Exact newer published version to review; omit for the latest published version."})),
         reviewToken: Type.Optional(Type.String({description: "Token from the unchanged preview; omit for read-only inspection."})),
       }),
       execute: async (toolCallId, {workpiece, blueprintId, fromVersion, toVersion, reviewToken}) => {
@@ -3429,10 +3436,8 @@ export async function runAgent(
           const current = pinnedGadgets.has(workpieceId)
               ? sessionContent.get(workpieceId) : headFiles;
           if (!current) throw new Error("The gadget's current files are unavailable.");
-          const [base, target] = await Promise.all([
-            hooks.fetchBlueprintUpgradeSource(blueprintId, fromVersion),
-            hooks.fetchBlueprintUpgradeSource(blueprintId, toVersion),
-          ]);
+          const {base, target} = await hooks.resolveBlueprintUpgradeSources(
+              blueprintId, current, fromVersion, toVersion);
           const plan = await planBlueprintUpgrade(current, base, target, workpieceId);
           if (reviewToken !== undefined) {
             assertBlueprintUpgradeReviewed(plan, reviewToken);
@@ -3443,7 +3448,8 @@ export async function runAgent(
           }
           const {changes: _changes, ...review} = plan;
           const output = JSON.stringify({
-            gadgetId: workpieceId, blueprintId, fromVersion, toVersion, baseCommit: head,
+            gadgetId: workpieceId, blueprintId, fromVersion: base.version, toVersion: target.version,
+            baseCommit: head,
             ...review, status: reviewToken === undefined ? "preview" : "staged_for_review",
             ...(reviewToken !== undefined && plan.changes.length > 0 ? {changeId: nextChangeId} : {}),
             note: "Source only. Existing bindings and stored data remain in place. Review compatibility before accepting; verify runtime behavior after acceptance.",
