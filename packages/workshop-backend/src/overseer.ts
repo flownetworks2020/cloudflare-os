@@ -6051,11 +6051,11 @@ class OverseerImpl implements AgentHooks {
   async submitAction(gatekeeperId: number, action: number,
                      description: ActionDescription, caller: GatekeeperCaller)
       : Promise<void> {
-    if (this.storage.prohibitAllSharing.get()) {
-      throw new Error(
-          "This workspace has observed sensitive data. To prevent leaks, the workspace is prohibited " +
-          "from performing actions.");
-    }
+    // Owner-only workspaces still need to stage actions for their owner to review. The
+    // action is retained locally until that owner explicitly approves it, while the
+    // sharing lock continues to prevent collaborators from opening or being added to
+    // the workspace. Refusing it here would leave a gatekeeper's durable request
+    // looking pending even though no reviewable action was recorded.
 
     // Push authorization (see ActionDescription.pushedCommits): before anything is queued,
     // verify that every declared head's ancestry reaches a commit proven on this gatekeeper's

@@ -88,6 +88,27 @@ async function collect(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> 
 }
 
 describe("push authorization through the Overseer chokepoints", () => {
+  it("queues an owner-reviewed action after an owner-only observation", async () => {
+    await inOverseer("owner-only-action", async impl => {
+      impl.storage.prohibitAllSharing.put(true);
+
+      await impl.submitAction(GATEKEEPER, 1, {
+        title: "Change workstream",
+        description: "Move the selected work item to Delivery.",
+        implementsRevert: false,
+        awaitDecision: true,
+      }, { from: "user" });
+
+      expect(Array.from(impl.storage.actions.list())).toMatchObject([{
+        gatekeeperId: GATEKEEPER,
+        action: 1,
+        state: "pending",
+        type: "action",
+        description: { title: "Change workstream", awaitDecision: true },
+      }]);
+    });
+  });
+
   it("verifies, marks, applies with an action-scoped cache, and converts marks", async () => {
     await inOverseer("push-apply", async impl => {
       let { base, head } = await seedPushableHistory(impl);
