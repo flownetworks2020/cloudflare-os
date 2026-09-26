@@ -73,6 +73,12 @@ import {
   type GadgetExportEntrypoint,
   readCustomExportFormats,
 } from "./gadget-export";
+import {
+  COLD_CAPTURE_WRAPPER_MODULE,
+  COLD_CAPTURE_WRAPPER_SOURCE,
+  readColdCapture,
+  type ColdCaptureResult,
+} from "./cold-capture";
 
 const logger = createWorkshopLogger("workshop.overseer");
 export const AGENT_RUNNING_ERROR_MESSAGE = "Agent is running, wait for it to finish.";
@@ -5038,6 +5044,60 @@ class OverseerImpl implements AgentHooks {
         tails: [this.ctx.exports.GadgetTailLoopback({props: tailProps})],
       };
     });
+  }
+
+  // Loads the host-owned capture wrapper under a cache key that can never resolve to the live
+  // worker. The wrapper imports server.js unchanged and only adds __coldCaptureDump().
+  loadGadgetCaptureWorker(gadgetId: WorkpieceId): WorkerStub {
+    let codeVersion = `${this.storage.codeVersion.get()}`;
+    return this.env.LOADER.get(`${this.ctx.id}.${codeVersion}.capture.${gadgetId}`, async () => {
+      let commitId = this.getGadgetHead(gadgetId);
+      let files = commitId !== undefined
+          ? await this.gitStore.readCommitFiles(commitId)
+          : new Map<string, string>();
+      let modules: Record<string, string> = {};
+      for (let [file, content] of files) {
+        if (file.endsWith(".js")) modules[file] = content;
+      }
+      modules[COLD_CAPTURE_WRAPPER_MODULE] = COLD_CAPTURE_WRAPPER_SOURCE;
+
+      return {
+        compatibilityDate: "2026-02-01",
+        compatibilityFlags: ["allow_irrevocable_stub_storage"],
+        mainModule: COLD_CAPTURE_WRAPPER_MODULE,
+        modules,
+        env: this.getEnvForLoader(gadgetId, {from: "gadget", gadgetId}),
+        globalOutbound: null,
+      };
+    });
+  }
+
+  /**
+   * Reads a gadget facet's storage through a host-owned subclass, never through a
+   * gadget-defined RPC method. This is intentionally internal: the cold-capture orchestrator is
+   * the only future caller, so no client-facing capability can enumerate another gadget's data.
+   */
+  async captureGadgetStorage(gadgetId: WorkpieceId): Promise<ColdCaptureResult> {
+    let files = await this.readGadgetFiles(gadgetId);
+    if (!files.has("server.js")) {
+      return {status: "unreadable", reason: "Gadget has no server.js module."};
+    }
+
+    let facetName = this.gadgetFacetName(gadgetId);
+    // A facet's storage is keyed by its name. Restarting it with the capture class preserves that
+    // storage while ensuring the wrapper (rather than the live class) owns this one RPC call.
+    this.ctx.facets.abort(facetName, new Error("Gadget restarted for cold storage capture."));
+    try {
+      let worker = this.loadGadgetCaptureWorker(gadgetId);
+      let facet = this.ctx.facets.get<DurableObject & {
+        __coldCaptureDump(): Promise<[string, unknown][]>;
+      }>(facetName, () => ({class: worker.getDurableObjectClass("Gadget")}));
+      return await readColdCapture(facet);
+    } finally {
+      // Do not leave the capture class serving a live facet. The next ordinary access reloads the
+      // current gadget worker against the preserved facet storage.
+      this.ctx.facets.abort(facetName, new Error("Cold storage capture completed."));
+    }
   }
 
   // Load the given gadget's facet (if it's not running already) and return the stub to it.
