@@ -1504,6 +1504,33 @@ export function makeOverseerStorage(storage: DurableObjectStorage) {
 /** The Overseer's typed storage. See makeOverseerStorage. */
 export type OverseerStorage = ReturnType<typeof makeOverseerStorage>;
 
+/**
+ * Every live Overseer collection that participates in a cold workspace capture.
+ * Adding a schema collection is a durability decision: it must extend this set
+ * or capture fails closed. The three Yjs migration collections are deliberately
+ * omitted because they are read-only legacy rollback data.
+ */
+export const OVERSEER_CAPTURE_COLLECTIONS = [
+  "gitObjects", "gitObjectMetadata", "gadgets", "gatekeepers", "actions", "boundHooks",
+  "autoApproveTags", "chatMeta", "chatContext", "chatCompactions", "activeAgents",
+  "gadgetResponseDeliveries", "externalChats", "chats", "chatChanges", "chatChangeClients",
+  "chatChangeBoundaries", "nextChatSequences", "agentCallbackArgs", "chatModelData",
+  "collaborators", "shareKeys", "blueprints", "chatAttachmentContent", "observers",
+] as const;
+
+const OVERSEER_LEGACY_COLLECTIONS = ["code", "snapshots", "chatDraftUpdates"] as const;
+const OVERSEER_STORAGE_SINGLETONS = new Set([
+  "transaction", "ownerId", "version", "title", "defaultGadgetId", "ownerRegistrationPending",
+  "codeVersion", "totalCost", "nextGatekeeperId", "nextActionId", "nextChatId", "nextHookId",
+  "deadWorktreeIds", "prohibitAllSharing",
+]);
+
+/** A named, in-memory copy of one collection for the cold-capture writer. */
+export type WorkspaceSnapshotCollection = {
+  name: typeof OVERSEER_CAPTURE_COLLECTIONS[number];
+  records: unknown[];
+};
+
 // Validates a client-supplied commit oid before it reaches the git store.
 function validateOid(oid: string): string {
   if (!/^[0-9a-f]{40}$/.test(oid)) {
@@ -1642,6 +1669,24 @@ class OverseerImpl implements AgentHooks {
   // driver, and push authorization (see git-cache.ts). Per-gatekeeper GitCache stubs are minted
   // from this via `new GitCacheImpl(...)`.
   readonly gitCache: WorkspaceGitCache;
+
+  /**
+   * Reads the complete live workspace collection set for a host-authored cold
+   * capture. This is intentionally not exposed through the client RPC surface.
+   */
+  captureWorkspaceSnapshot(): WorkspaceSnapshotCollection[] {
+    let known = new Set<string>([...OVERSEER_CAPTURE_COLLECTIONS, ...OVERSEER_LEGACY_COLLECTIONS]);
+    for (let name of Object.keys(this.storage)) {
+      if (!OVERSEER_STORAGE_SINGLETONS.has(name) && !known.has(name)) {
+        throw new Error(`Cannot capture workspace: unrecognized Overseer collection ${name}.`);
+      }
+    }
+
+    return OVERSEER_CAPTURE_COLLECTIONS.map(name => {
+      let collection = (this.storage as unknown as Record<string, { list(): Iterable<unknown> }>)[name];
+      return { name, records: [...collection.list()] };
+    });
+  }
 
   // Per-chat in-memory state for running agents and pending agent callbacks.
   #liveChats = new Map<number, LiveChatContext>();
