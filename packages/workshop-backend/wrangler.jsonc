@@ -74,6 +74,10 @@
     {
       "binding": "BLUEPRINT_CONTENT",
       "bucket_name": "gadgets-blueprint-content"
+    },
+    {
+      "binding": "COLD_CAPTURE",
+      "bucket_name": "gadgets-cold-capture"
     }
   ],
   "worker_loaders": [
