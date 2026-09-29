@@ -89,3 +89,61 @@ export async function writeColdCaptureContent(
   }
   return {key: sha256, sha256, byteLength: bytes.byteLength, written: false};
 }
+
+/** Identifies one capture without embedding any of its captured bytes. */
+export type ColdCaptureIdentity = {
+  workspaceId: string;
+  captureId: string;
+  capturedAt: string;
+  deploymentCommit: string;
+};
+
+/** A content-addressed object reference that is safe to include in a manifest. */
+export type ColdCaptureObjectReference = {
+  collection: string;
+  key: string;
+  sha256: string;
+  byteLength: number;
+  contentKey: string;
+};
+
+/** A bounded, byte-free summary of objects from one cold capture. */
+export type ColdCaptureManifest = {
+  capture: ColdCaptureIdentity;
+  objects: ColdCaptureObjectReference[];
+};
+
+const MAX_COLD_CAPTURE_MANIFEST_OBJECTS = 100;
+
+/**
+ * Build bounded manifest summaries without retaining any captured object bytes.
+ *
+ * The builder copies only the R5 pointer fields, even if callers' object
+ * references carry additional data. Large captures are split rather than
+ * truncated so every captured object remains represented.
+ */
+export function buildColdCaptureManifests(
+    capture: ColdCaptureIdentity,
+    objects: readonly ColdCaptureObjectReference[],
+): ColdCaptureManifest[] {
+  let manifests: ColdCaptureManifest[] = [];
+  for (let start = 0; start < objects.length; start += MAX_COLD_CAPTURE_MANIFEST_OBJECTS) {
+    let manifestObjects = objects.slice(start, start + MAX_COLD_CAPTURE_MANIFEST_OBJECTS).map(object => ({
+      collection: object.collection,
+      key: object.key,
+      sha256: object.sha256,
+      byteLength: object.byteLength,
+      contentKey: object.contentKey,
+    }));
+    manifests.push({
+      capture: {
+        workspaceId: capture.workspaceId,
+        captureId: capture.captureId,
+        capturedAt: capture.capturedAt,
+        deploymentCommit: capture.deploymentCommit,
+      },
+      objects: manifestObjects,
+    });
+  }
+  return manifests;
+}
